@@ -110,6 +110,7 @@ def test_summary_command_writes_one_combined_markdown_report(tmp_path, capsys):
     )
     output = tmp_path / "reports" / "llm-fuzz-ci-report.md"
     args = Namespace(
+        format="full",
         corpus_dir=tmp_path / "cases",
         report=tmp_path / "test-report.json",
         usage_report=tmp_path / "missing-usage.json",
@@ -135,6 +136,7 @@ def test_summary_command_runs_without_a_test_report(tmp_path):
     )
     output = tmp_path / "reports" / "llm-fuzz-ci-report.md"
     args = Namespace(
+        format="full",
         corpus_dir=tmp_path / "cases",
         report=tmp_path / "missing-report.json",
         usage_report=tmp_path / "missing-usage.json",

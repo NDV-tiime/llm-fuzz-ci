@@ -88,11 +88,13 @@ jobs:
 
       - name: Show generated inputs
         run: |
-          llm-fuzz-ci cases \
+          llm-fuzz-ci summary \
+            --format overview \
             --corpus-dir .llm-fuzz/cases \
-            --output .llm-fuzz/reports/generated-inputs.md
-          cat .llm-fuzz/reports/generated-inputs.md
-          cat .llm-fuzz/reports/generated-inputs.md >> "$GITHUB_STEP_SUMMARY"
+            --usage-report .llm-fuzz/reports/llm-usage.json \
+            --output .llm-fuzz/reports/overview.md
+          cat .llm-fuzz/reports/overview.md
+          cat .llm-fuzz/reports/overview.md >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -142,21 +144,17 @@ jobs:
             --require-cases \
             -- tests -q
 
-      - name: Show test report
+      - name: Show test results
         if: always()
         run: |
-          if [ ! -f .llm-fuzz/reports/test-report.json ]; then
-            echo "No LLM Fuzz CI test report was produced."
-            exit 0
-          fi
-          llm-fuzz-ci report \
+          llm-fuzz-ci summary \
+            --format overview \
+            --corpus-dir .llm-fuzz/cases \
             --report .llm-fuzz/reports/test-report.json \
-            --format markdown \
-            --all \
-            --show-failure-details \
-            --output .llm-fuzz/reports/test-report.md
-          cat .llm-fuzz/reports/test-report.md
-          cat .llm-fuzz/reports/test-report.md >> "$GITHUB_STEP_SUMMARY"
+            --usage-report .llm-fuzz/reports/llm-usage.json \
+            --output .llm-fuzz/reports/overview.md
+          cat .llm-fuzz/reports/overview.md
+          cat .llm-fuzz/reports/overview.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Write full report artifact
         if: always()
@@ -179,7 +177,7 @@ jobs:
         if: steps.test_fuzz_cases.outcome == 'failure'
         uses: actions/github-script@v9
         env:
-          REPORT_PATH: .llm-fuzz/reports/test-report.md
+          REPORT_PATH: .llm-fuzz/reports/overview.md
         with:
           script: |
             const fs = require('fs');

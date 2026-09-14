@@ -1,0 +1,300 @@
+name: LLM Fuzz CI
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Repository subdirectory where collection, generation, and testing run.
+        required: false
+        type: string
+        default: "."
+      test-paths:
+        description: Space-separated pytest paths to collect and test.
+        required: false
+        type: string
+        default: tests
+      setup-command:
+        description: Shell command that installs the caller repository's test dependencies.
+        required: false
+        type: string
+        default: ""
+      pythonpath:
+        description: Optional PYTHONPATH for src-layout or un-packaged Python repositories.
+        required: false
+        type: string
+        default: ""
+      python-version:
+        description: Python version for collect and test jobs.
+        required: false
+        type: string
+        default: "3.12"
+      agent:
+        description: "Fuzz case generator to use: codex or claude."
+        required: false
+        type: string
+        default: codex
+      model:
+        description: Optional model passed to the selected coding agent.
+        required: false
+        type: string
+        default: ""
+      provider:
+        description: Optional Codex model provider id. Use openrouter for the built-in OpenRouter shortcut.
+        required: false
+        type: string
+        default: ""
+      anthropic-base-url:
+        description: Optional Claude Code gateway base URL.
+        required: false
+        type: string
+        default: ""
+      max-cases:
+        description: Optional maximum generated cases per target.
+        required: false
+        type: string
+        default: ""
+      max-turns:
+        description: Optional maximum Claude Code turns per target.
+        required: false
+        type: string
+        default: ""
+      max-budget-usd:
+        description: Optional override for each target's required marker budget. Claude Code receives it as a hard per-target budget.
+        required: false
+        type: string
+        default: ""
+      timeout-seconds:
+        description: Maximum generation time per target.
+        required: false
+        type: string
+        default: "600"
+      show-usage:
+        description: Print total LLM token usage after generation.
+        required: false
+        type: boolean
+        default: false
+      create-issue:
+        description: Create a GitHub issue when generated inputs fail marked tests.
+        required: false
+        type: boolean
+        default: false
+      hard-fail:
+        description: Fail the workflow when generated inputs fail marked tests.
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      OPENAI_API_KEY:
+        required: false
+      OPENROUTER_API_KEY:
+        required: false
+      ANTHROPIC_API_KEY:
+        required: false
+      ANTHROPIC_AUTH_TOKEN:
+        required: false
+
+jobs:
+  generate-fuzz-cases:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - uses: llm-fuzz/llm-fuzz-ci/actions/generate@v1
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          test-paths: ${{ inputs.test-paths }}
+          setup-command: ${{ inputs.setup-command }}
+          pythonpath: ${{ inputs.pythonpath }}
+          agent: ${{ inputs.agent }}
+          model: ${{ inputs.model }}
+          provider: ${{ inputs.provider }}
+          max-cases: ${{ inputs.max-cases }}
+          max-turns: ${{ inputs.max-turns }}
+          max-budget-usd: ${{ inputs.max-budget-usd }}
+          timeout-seconds: ${{ inputs.timeout-seconds }}
+          show-usage: ${{ inputs.show-usage }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic-base-url: ${{ inputs.anthropic-base-url }}
+          anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+
+      - name: Show generated inputs
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          llm-fuzz-ci summary \
+            --format overview \
+            --corpus-dir .llm-fuzz/cases \
+            --usage-report .llm-fuzz/reports/llm-usage.json \
+            --output .llm-fuzz/reports/overview.md
+          cat .llm-fuzz/reports/overview.md
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            cat .llm-fuzz/reports/overview.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: llm-fuzz-cases
+          path: |
+            ${{ inputs.working-directory }}/.llm-fuzz/targets.json
+            ${{ inputs.working-directory }}/.llm-fuzz/cases
+            ${{ inputs.working-directory }}/.llm-fuzz/reports
+          if-no-files-found: error
+
+  test-fuzz-cases:
+    needs: generate-fuzz-cases
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: llm-fuzz-cases
+          path: ${{ inputs.working-directory }}/.llm-fuzz
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - uses: llm-fuzz/llm-fuzz-ci/actions/setup@v1
+
+      - name: Install test dependencies
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          LLM_FUZZ_PYTHONPATH: ${{ inputs.pythonpath }}
+        run: |
+          set -euo pipefail
+          if [ -n "$LLM_FUZZ_PYTHONPATH" ]; then
+            export PYTHONPATH="$LLM_FUZZ_PYTHONPATH${PYTHONPATH:+:$PYTHONPATH}"
+          fi
+          if [ -n "${{ inputs.setup-command }}" ]; then
+            ${{ inputs.setup-command }}
+          fi
+
+      - name: Test fuzz cases
+        id: test_fuzz_cases
+        continue-on-error: true
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          LLM_FUZZ_PYTHONPATH: ${{ inputs.pythonpath }}
+        run: |
+          set -euo pipefail
+          if [ -n "$LLM_FUZZ_PYTHONPATH" ]; then
+            export PYTHONPATH="$LLM_FUZZ_PYTHONPATH${PYTHONPATH:+:$PYTHONPATH}"
+          fi
+          llm-fuzz-ci test-fuzz-cases \
+            --corpus-dir .llm-fuzz/cases \
+            --report .llm-fuzz/reports/test-report.json \
+            --require-cases \
+            -- ${{ inputs.test-paths }}
+
+      - name: Show test results
+        if: always()
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          llm-fuzz-ci summary \
+            --format overview \
+            --corpus-dir .llm-fuzz/cases \
+            --report .llm-fuzz/reports/test-report.json \
+            --usage-report .llm-fuzz/reports/llm-usage.json \
+            --output .llm-fuzz/reports/overview.md
+          cat .llm-fuzz/reports/overview.md
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            cat .llm-fuzz/reports/overview.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Write full report artifact
+        if: always()
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          llm-fuzz-ci summary \
+            --corpus-dir .llm-fuzz/cases \
+            --report .llm-fuzz/reports/test-report.json \
+            --usage-report .llm-fuzz/reports/llm-usage.json \
+            --output .llm-fuzz/reports/llm-fuzz-ci-report.md
+
+      - name: Analyze test report
+        id: test_report
+        if: always()
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          if [ ! -f .llm-fuzz/reports/test-report.json ]; then
+            echo "executed_cases=0" >> "$GITHUB_OUTPUT"
+            echo "failed_cases=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python - <<'PY'
+          import json
+          import os
+
+          report = json.load(open(".llm-fuzz/reports/test-report.json"))
+          summary = report.get("summary", {})
+          executed = int(summary.get("executed_cases", 0))
+          failed = int(summary.get("failed_cases", 0))
+
+          print(f"Executed generated inputs: {executed}")
+          print(f"Failed generated inputs: {failed}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"executed_cases={executed}\n")
+              out.write(f"failed_cases={failed}\n")
+          PY
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: llm-fuzz-ci-report
+          path: ${{ inputs.working-directory }}/.llm-fuzz/reports
+          if-no-files-found: ignore
+
+      - name: Create GitHub issue
+        if: inputs.create-issue && steps.test_report.outputs.failed_cases != '0'
+        uses: actions/github-script@v9
+        env:
+          REPORT_PATH: ${{ inputs.working-directory }}/.llm-fuzz/reports/overview.md
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync(process.env.REPORT_PATH, 'utf8');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'LLM Fuzz CI detected a vulnerability',
+              body
+            });
+
+      - name: Fail workflow
+        if: inputs.hard-fail && steps.test_fuzz_cases.outcome == 'failure'
+        shell: bash
+        run: |
+          if [ "${{ steps.test_report.outputs.failed_cases }}" != "0" ]; then
+            echo "LLM Fuzz CI found at least one generated input that failed its marked test."
+          else
+            echo "LLM Fuzz CI failed before a generated input failure was recorded. This is likely setup or infrastructure."
+          fi
+          exit 1

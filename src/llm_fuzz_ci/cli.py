@@ -11,6 +11,7 @@ from .generator import generate_cases_with_usage
 from .reports import (
     format_cases_markdown,
     format_full_report_markdown,
+    format_overview_markdown,
     format_test_report_markdown,
     format_test_report_text,
 )
@@ -138,12 +139,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     report.set_defaults(func=cmd_report)
 
-    summary = subparsers.add_parser("summary", help="Render a complete Markdown report")
+    summary = subparsers.add_parser("summary", help="Render a combined Markdown report")
+    summary.add_argument(
+        "--format",
+        choices=["full", "overview"],
+        default="full",
+        help=(
+            "full: every input, for the CI artifact. "
+            "overview: a short scannable digest, for the Actions run summary."
+        ),
+    )
     summary.add_argument("--corpus-dir", default=".llm-fuzz/cases")
     summary.add_argument("--report", default=".llm-fuzz/reports/test-report.json")
     summary.add_argument("--usage-report", default=".llm-fuzz/reports/llm-usage.json")
     summary.add_argument("--output", default=".llm-fuzz/reports/llm-fuzz-ci-report.md")
-    summary.add_argument("--max-cases", type=int, default=100)
+    summary.add_argument("--max-cases", type=int, default=1000)
     summary.set_defaults(func=cmd_summary)
 
     alert = subparsers.add_parser("alert", help="Send alerts for a test report")
@@ -282,12 +292,20 @@ def cmd_report(args: argparse.Namespace) -> int:
 def cmd_summary(args: argparse.Namespace) -> int:
     test_report = _load_optional_json(args.report)
     usage_report = _load_optional_json(args.usage_report)
-    content = format_full_report_markdown(
-        cases=load_cases(args.corpus_dir),
-        test_report=test_report,
-        usage_report=usage_report,
-        max_cases=args.max_cases,
-    )
+    cases = load_cases(args.corpus_dir)
+    if args.format == "overview":
+        content = format_overview_markdown(
+            cases=cases,
+            test_report=test_report,
+            usage_report=usage_report,
+        )
+    else:
+        content = format_full_report_markdown(
+            cases=cases,
+            test_report=test_report,
+            usage_report=usage_report,
+            max_cases=args.max_cases,
+        )
     path = Path(args.output)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content + "\n", encoding="utf-8")

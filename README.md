@@ -60,19 +60,24 @@ and applies to that marked test.
 
 ## Read The Results
 
-Open the workflow run in GitHub Actions. The run summary and logs show:
+There are two surfaces, and they are deliberately different lengths.
 
-- every generated input;
-- the target test for each input;
-- category and rationale metadata;
-- pass/fail result for each tested input;
-- compact failure details when an assertion fails;
-- token usage when `show-usage: true`.
+**The GitHub Actions run summary** is a digest you can read without scrolling:
 
-You do not need to download artifacts to understand the run.
+- a heading that states the verdict, for example `2 of 23 tested inputs failed`;
+- one row per marked test, with input counts and pass/fail/not-tested totals;
+- every failing input in full, expanded, with its payload and failure excerpt;
+- then one collapsed section per marked test, holding every input it was given
+  with its category, rationale, outcome, and payload;
+- the agent, model, and token total.
 
-When you do want the whole run in one place, download the `llm-fuzz-ci-report`
-artifact and open `llm-fuzz-ci-report.md`. It is a single Markdown document:
+Collapsed, each marked test costs one line, so the digest grows with how many
+tests you marked rather than with how many inputs the agent produced. Long
+payloads are truncated with a `(+N chars)` marker; a repository with 40 markers
+and 320 inputs still opens to about 130 lines.
+
+**The `llm-fuzz-ci-report` artifact** is the exhaustive version. Download it and
+open `llm-fuzz-ci-report.md`, a single Markdown document:
 
 - a summary table, and one sentence saying what the run means;
 - failing inputs first, each with its input, rationale, and failure excerpt;
@@ -155,11 +160,13 @@ llm-fuzz-ci generate --agent codex --model gpt-5.6-terra --show-usage
 llm-fuzz-ci cases
 llm-fuzz-ci test-fuzz-cases --require-cases -- tests -q
 llm-fuzz-ci report --all --show-failure-details
+llm-fuzz-ci summary --format overview --output .llm-fuzz/reports/overview.md
 llm-fuzz-ci summary --output .llm-fuzz/reports/llm-fuzz-ci-report.md
 ```
 
-`report` prints the pass/fail outcome for the terminal. `summary` writes the
-combined Markdown document that CI uploads as an artifact.
+`report` prints the pass/fail outcome for the terminal. `summary --format
+overview` writes the digest CI puts in the run summary; `summary` on its own
+writes the full document CI uploads as an artifact.
 
 ## Status
 
