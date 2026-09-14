@@ -436,6 +436,18 @@ def _diagnose_process_failure(output: str) -> str | None:
         )
     if "invalid_json_schema" in lowered or "invalid schema for response_format" in lowered:
         return "the agent output JSON Schema is not accepted by the model provider"
+    if "not scoped to a workspace" in lowered:
+        return (
+            "the Anthropic API key belongs to the organization rather than a "
+            "workspace; set the action's anthropic-workspace-id input, or use a "
+            "key created inside a workspace"
+        )
+    if "flagged for possible cybersecurity risk" in lowered:
+        return (
+            "the model provider refused the request under its cybersecurity "
+            "policy; switch to --agent claude, or apply for the provider's "
+            "authorized security-work program"
+        )
     if "unexpected argument" in lowered:
         return "the installed agent CLI does not support one of the flags passed by LLM Fuzz CI"
     if "missing openai api key" in lowered or "api key" in lowered and "missing" in lowered:

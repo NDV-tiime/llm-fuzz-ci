@@ -82,6 +82,12 @@ inputs:
     description: Optional Claude Code gateway bearer token.
     required: false
     default: ""
+  anthropic-workspace-id:
+    description: >-
+      Workspace id for an Anthropic API key that is not scoped to a workspace.
+      Sent to Claude Code as the anthropic-workspace-id request header.
+    required: false
+    default: ""
   install-agent:
     description: Install Codex CLI or Claude Code when the selected agent needs it.
     required: false
@@ -155,6 +161,7 @@ runs:
         LLM_FUZZ_INPUT_ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         LLM_FUZZ_INPUT_ANTHROPIC_BASE_URL: ${{ inputs.anthropic-base-url }}
         LLM_FUZZ_INPUT_ANTHROPIC_AUTH_TOKEN: ${{ inputs.anthropic-auth-token }}
+        LLM_FUZZ_INPUT_ANTHROPIC_WORKSPACE_ID: ${{ inputs.anthropic-workspace-id }}
       run: |
         set -euo pipefail
         if [ -n "$LLM_FUZZ_PYTHONPATH" ]; then
@@ -165,6 +172,15 @@ runs:
         if [ -n "$LLM_FUZZ_INPUT_ANTHROPIC_API_KEY" ]; then export ANTHROPIC_API_KEY="$LLM_FUZZ_INPUT_ANTHROPIC_API_KEY"; fi
         if [ -n "$LLM_FUZZ_INPUT_ANTHROPIC_BASE_URL" ]; then export ANTHROPIC_BASE_URL="$LLM_FUZZ_INPUT_ANTHROPIC_BASE_URL"; fi
         if [ -n "$LLM_FUZZ_INPUT_ANTHROPIC_AUTH_TOKEN" ]; then export ANTHROPIC_AUTH_TOKEN="$LLM_FUZZ_INPUT_ANTHROPIC_AUTH_TOKEN"; fi
+        if [ -n "$LLM_FUZZ_INPUT_ANTHROPIC_WORKSPACE_ID" ]; then
+          # An API key with no workspace of its own needs this header, and
+          # Claude Code only reads extra headers from ANTHROPIC_CUSTOM_HEADERS.
+          header="anthropic-workspace-id: $LLM_FUZZ_INPUT_ANTHROPIC_WORKSPACE_ID"
+          if [ -n "${ANTHROPIC_CUSTOM_HEADERS:-}" ]; then
+            header="$(printf '%s\n%s' "$ANTHROPIC_CUSTOM_HEADERS" "$header")"
+          fi
+          export ANTHROPIC_CUSTOM_HEADERS="$header"
+        fi
         extra=()
         if [ -n "${{ inputs.model }}" ]; then extra+=(--model "${{ inputs.model }}"); fi
         if [ -n "${{ inputs.provider }}" ]; then extra+=(--provider "${{ inputs.provider }}"); fi
