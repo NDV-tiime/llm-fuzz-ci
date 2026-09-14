@@ -1,3 +1,4 @@
+import json
 import subprocess
 
 import pytest
@@ -9,7 +10,7 @@ from llm_fuzz_ci.usage import LLMUsage
 
 
 def test_parse_agent_cases_accepts_structured_output():
-    cases = generator._parse_agent_cases(
+    cases, skipped = generator._parse_agent_cases(
         """
         {
           "cases": [
@@ -23,6 +24,7 @@ def test_parse_agent_cases_accepts_structured_output():
         "tests/test_app.py::test_divide",
     )
 
+    assert skipped == []
     assert len(cases) == 1
     assert cases[0].target_id == "tests/test_app.py::test_divide"
     assert cases[0].input == {"x": 1, "y": 0}
@@ -353,3 +355,31 @@ def test_process_failure_explains_a_provider_policy_refusal():
 
     assert "refused the request under its cybersecurity" in message
     assert "--agent claude" in message
+
+
+def test_one_unparseable_case_does_not_discard_the_others():
+    cases, skipped = generator._parse_agent_cases(
+        json.dumps(
+            {
+                "cases": [
+                    {"input_json": '{"a": 1}', "rationale": "fine"},
+                    {"input_json": "{'b': 2}", "rationale": "single quotes"},
+                    {"input_json": '{"c": 3,}', "rationale": "trailing comma"},
+                ]
+            }
+        ),
+        "tests/test_app.py::test_x",
+    )
+
+    assert [case.input for case in cases] == [{"a": 1}, {"c": 3}]
+    assert len(skipped) == 1
+    assert "case 2" in skipped[0]
+    assert "not valid JSON" in skipped[0]
+
+
+def test_an_entirely_unparseable_reply_still_fails_loudly():
+    with pytest.raises(ValueError, match="No usable cases"):
+        generator._parse_agent_cases(
+            json.dumps({"cases": [{"input_json": "{'a': 1}", "rationale": "bad"}]}),
+            "tests/test_app.py::test_x",
+        )

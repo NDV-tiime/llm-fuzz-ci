@@ -96,7 +96,7 @@ class FuzzCase:
         resolved = str(target_id if target_id is not None else data["target_id"])
         input_value = data.get("input", {})
         if "input_json" in data and "input" not in data:
-            input_value = json.loads(str(data["input_json"]))
+            input_value = parse_input_json(str(data["input_json"]))
         if not isinstance(input_value, dict):
             raise ValueError(f"Fuzz case input must be an object: {data!r}")
         rationale = str(data.get("rationale") or DEFAULT_CASE_RATIONALE)
@@ -113,6 +113,46 @@ class FuzzCase:
             "input": self.input,
             "rationale": self.rationale,
         }
+
+
+def parse_input_json(raw: str) -> dict[str, Any]:
+    """Decode the JSON object an agent hand-encoded inside a string.
+
+    Structured output guarantees `input_json` is a string, never that its
+    contents parse: the agent has to escape a JSON document inside a JSON
+    string, and payloads full of quotes, backslashes, and newlines are exactly
+    where that goes wrong. Repair the two malformations that actually show up,
+    then give a message that names the offending text.
+    """
+    text = _strip_code_fence(raw.strip())
+    for candidate in (text, _drop_trailing_commas(text)):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            last = exc
+    raise ValueError(
+        f"input_json is not valid JSON ({last.msg} at column {last.colno}): "
+        f"{_clip_for_error(text)}"
+    ) from last
+
+
+def _strip_code_fence(text: str) -> str:
+    if not text.startswith("```"):
+        return text
+    lines = text.splitlines()
+    if lines and lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def _drop_trailing_commas(text: str) -> str:
+    return re.sub(r",(\s*[}\]])", r"\1", text)
+
+
+def _clip_for_error(text: str, limit: int = 300) -> str:
+    return text if len(text) <= limit else text[:limit] + "... (truncated)"
 
 
 def make_case(

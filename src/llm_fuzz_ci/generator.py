@@ -6,7 +6,7 @@ import re
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from importlib.resources import files
 from pathlib import Path
 from typing import Iterable
@@ -36,6 +36,7 @@ CLAUDE_ALLOWED_INSPECT_TOOLS = [
 class GenerationResult:
     cases: list[FuzzCase]
     usage: LLMUsage | None = None
+    skipped: list[str] = field(default_factory=list)
 
 
 def generate_cases_with_usage(
@@ -70,6 +71,7 @@ def generate_cases_with_usage(
         raise ValueError(f"Unsupported agent: {agent}")
 
     all_cases: list[FuzzCase] = []
+    all_skipped: list[str] = []
     total_usage: LLMUsage | None = None
     root = Path(repo_root)
     for target in target_list:
@@ -93,9 +95,10 @@ def generate_cases_with_usage(
                 capture_usage=capture_usage,
             )
         all_cases.extend(result.cases)
+        all_skipped.extend(result.skipped)
         total_usage = _merge_usage(total_usage, result.usage)
 
-    return GenerationResult(all_cases, total_usage)
+    return GenerationResult(all_cases, total_usage, all_skipped)
 
 
 def _build_agent_prompt(targets: list[FuzzTarget], repo_root: Path) -> str:
@@ -162,8 +165,9 @@ def _generate_with_codex(
             if output_path.exists()
             else completed.stdout
         )
+        cases, skipped = _parse_agent_cases(output_text, targets[0].id)
         return GenerationResult(
-            _parse_agent_cases(output_text, targets[0].id),
+            cases,
             extract_usage_from_json_events(
                 completed.stdout,
                 provider=_usage_provider_for_codex(provider),
@@ -171,6 +175,7 @@ def _generate_with_codex(
             )
             if capture_usage
             else None,
+            skipped,
         )
 
 
@@ -204,8 +209,9 @@ def _generate_with_claude(
     )
     if completed.returncode != 0:
         raise RuntimeError(_format_process_failure("Claude", cmd, completed))
+    cases, skipped = _parse_agent_cases(completed.stdout, targets[0].id)
     return GenerationResult(
-        _parse_agent_cases(completed.stdout, targets[0].id),
+        cases,
         extract_usage_from_json_events(
             completed.stdout,
             provider="anthropic",
@@ -213,6 +219,7 @@ def _generate_with_claude(
         )
         if capture_usage
         else None,
+        skipped,
     )
 
 
@@ -504,7 +511,10 @@ def _dedupe_preserving_order(lines: list[str]) -> list[str]:
     return deduped
 
 
-def _parse_agent_cases(output_text: str, target_id: str) -> list[FuzzCase]:
+def _parse_agent_cases(
+    output_text: str,
+    target_id: str,
+) -> tuple[list[FuzzCase], list[str]]:
     """Parse one agent reply into cases for the target that was requested.
 
     Generation is one target per agent call, so the target id is assigned here
@@ -517,10 +527,21 @@ def _parse_agent_cases(output_text: str, target_id: str) -> list[FuzzCase]:
     if "cases" not in raw:
         raise ValueError("Agent output must contain a top-level 'cases' list")
 
-    return [
-        FuzzCase.from_dict(dict(item), target_id=target_id)
-        for item in raw["cases"]
-    ]
+    cases: list[FuzzCase] = []
+    skipped: list[str] = []
+    for index, item in enumerate(raw["cases"], start=1):
+        try:
+            cases.append(FuzzCase.from_dict(dict(item), target_id=target_id))
+        except (ValueError, TypeError, KeyError) as exc:
+            # One unparseable payload used to discard every other case the
+            # agent produced for this target. Drop that one, keep the rest.
+            skipped.append(f"{target_id} case {index}: {exc}")
+    if raw["cases"] and not cases:
+        raise ValueError(
+            "No usable cases in the agent reply for "
+            f"{target_id}:\n" + "\n".join(skipped)
+        )
+    return cases, skipped
 
 
 def _strip_markdown(text: str) -> str:

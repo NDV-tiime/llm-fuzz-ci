@@ -206,6 +206,10 @@ def cmd_generate(args: argparse.Namespace) -> int:
             existing_path.unlink()
     written = write_cases(args.corpus_dir, cases, merge=False)
     print(f"Generated {len(cases)} fuzz case(s) across {len(written)} file(s).")
+    if result.skipped:
+        print(f"Discarded {len(result.skipped)} unparseable case(s):")
+        for reason in result.skipped:
+            print(f"  - {reason}")
     for path in written:
         print(path)
     if args.show_usage:
