@@ -26,10 +26,6 @@ inputs:
     description: Directory where saved fuzz cases are written.
     required: false
     default: .llm-fuzz/cases
-  reuse-existing-cases:
-    description: Merge generated cases with JSONL cases already present in corpus-dir.
-    required: false
-    default: "false"
   agent:
     description: "Fuzz case generator to use: codex or claude."
     required: false
@@ -175,7 +171,6 @@ runs:
         if [ -n "${{ inputs.max-cases }}" ]; then extra+=(--max-cases "${{ inputs.max-cases }}"); fi
         if [ -n "${{ inputs.max-turns }}" ]; then extra+=(--max-turns "${{ inputs.max-turns }}"); fi
         if [ -n "${{ inputs.max-budget-usd }}" ]; then extra+=(--max-budget-usd "${{ inputs.max-budget-usd }}"); fi
-        if [ "${{ inputs.reuse-existing-cases }}" = "true" ]; then extra+=(--reuse-existing-cases); fi
         if [ "${{ inputs.show-usage }}" = "true" ]; then extra+=(--show-usage); fi
         if [ -n "${{ inputs.usage-report }}" ]; then extra+=(--usage-report "${{ inputs.usage-report }}"); fi
         llm-fuzz-ci generate \

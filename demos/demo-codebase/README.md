@@ -46,21 +46,23 @@ llm-fuzz-ci generate \
   --corpus-dir .llm-fuzz/cases \
   --show-usage \
   --usage-report .llm-fuzz/reports/llm-usage.json
-llm-fuzz-ci replay --corpus-dir .llm-fuzz/cases --report .llm-fuzz/reports/replay-report.json --require-cases -- tests -q
+llm-fuzz-ci cases --corpus-dir .llm-fuzz/cases
+llm-fuzz-ci test-fuzz-cases --corpus-dir .llm-fuzz/cases --report .llm-fuzz/reports/test-report.json --require-cases -- tests -q
 ```
 
 Replace `sk-replace-me` with a real key. Generation should print total LLM token
-usage and write `.llm-fuzz/reports/llm-usage.json`; replay should fail and
-write `.llm-fuzz/reports/replay-report.json`.
+usage and write `.llm-fuzz/reports/llm-usage.json`; testing should fail and
+write `.llm-fuzz/reports/test-report.json`.
 
 The generation step above calls the real Codex CLI. No canned fuzz cases are
 included in this demo.
 
-Render the replay failures in a readable terminal format:
+Render the test results in a readable terminal format:
 
 ```bash
 llm-fuzz-ci report \
-  --report .llm-fuzz/reports/replay-report.json \
+  --report .llm-fuzz/reports/test-report.json \
+  --all \
   --show-failure-details
 ```
 
@@ -68,18 +70,19 @@ Write a Markdown report that is easier to inspect in an editor or CI artifact:
 
 ```bash
 llm-fuzz-ci report \
-  --report .llm-fuzz/reports/replay-report.json \
+  --report .llm-fuzz/reports/test-report.json \
   --format markdown \
+  --all \
   --show-failure-details \
-  --output .llm-fuzz/reports/replay-report.md
+  --output .llm-fuzz/reports/test-report.md
 ```
 
 Preview the GitHub issue alert body. It includes only the generated inputs that
-actually failed the replay assertions:
+actually failed the test assertions:
 
 ```bash
 llm-fuzz-ci alert github-issue \
-  --report .llm-fuzz/reports/replay-report.json \
+  --report .llm-fuzz/reports/test-report.json \
   --repo your-org/demo-codebase \
   --dry-run
 ```
@@ -94,11 +97,11 @@ OPENAI_API_KEY=sk-replace-me
 ```
 
 The first job uses `llm-fuzz-ci/actions/generate` to create `.llm-fuzz/cases` as
-an artifact. The second job installs the pytest plugin and replays those inputs
+an artifact. The second job installs the pytest plugin and tests those inputs
 with ordinary test commands, then uses `actions/github-script` to create an
-issue if replay fails.
+issue if a generated input fails.
 
-Keep application secrets in the replay/test job. The generation job should need
+Keep application secrets in the test job. The generation job should need
 only the LLM provider key.
 
 For a local Codex run, replace the placeholder and run:
@@ -120,7 +123,8 @@ llm-fuzz-ci generate \
   --corpus-dir .llm-fuzz/cases \
   --show-usage \
   --usage-report .llm-fuzz/reports/llm-usage.json
-llm-fuzz-ci replay --corpus-dir .llm-fuzz/cases --report .llm-fuzz/reports/replay-report.json --require-cases -- tests -q
+llm-fuzz-ci cases --corpus-dir .llm-fuzz/cases
+llm-fuzz-ci test-fuzz-cases --corpus-dir .llm-fuzz/cases --report .llm-fuzz/reports/test-report.json --require-cases -- tests -q
 ```
 
 If `codex exec --help` prints only the old top-level Codex help, update your

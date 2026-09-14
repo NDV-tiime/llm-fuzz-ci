@@ -4,13 +4,11 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 from .alerts import create_github_issue, load_report
 from .generator import generate_cases_with_usage
 from .reports import (
     format_cases_markdown,
-    format_full_report_markdown,
     format_test_report_markdown,
     format_test_report_text,
 )
@@ -137,14 +135,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Include compact pytest failure excerpts.",
     )
     report.set_defaults(func=cmd_report)
-
-    summary = subparsers.add_parser("summary", help="Render a complete Markdown report")
-    summary.add_argument("--corpus-dir", default=".llm-fuzz/cases")
-    summary.add_argument("--report", default=".llm-fuzz/reports/test-report.json")
-    summary.add_argument("--usage-report", default=".llm-fuzz/reports/llm-usage.json")
-    summary.add_argument("--output", default=".llm-fuzz/reports/llm-fuzz-ci-report.md")
-    summary.add_argument("--max-cases", type=int, default=100)
-    summary.set_defaults(func=cmd_summary)
 
     alert = subparsers.add_parser("alert", help="Send alerts for a test report")
     alert_subparsers = alert.add_subparsers(dest="alert_command", required=True)
@@ -279,22 +269,6 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_summary(args: argparse.Namespace) -> int:
-    test_report = _load_optional_json(args.report)
-    usage_report = _load_optional_json(args.usage_report)
-    content = format_full_report_markdown(
-        cases=load_cases(args.corpus_dir),
-        test_report=test_report,
-        usage_report=usage_report,
-        max_cases=args.max_cases,
-    )
-    path = Path(args.output)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content + "\n", encoding="utf-8")
-    print(f"Wrote LLM Fuzz CI report to {path}.")
-    return 0
-
-
 def cmd_alert_github_issue(args: argparse.Namespace) -> int:
     created = create_github_issue(
         report_path=args.report,
@@ -309,13 +283,6 @@ def cmd_alert_github_issue(args: argparse.Namespace) -> int:
     else:
         print("Alert created." if created else "No failures found; no alert sent.")
     return 0
-
-
-def _load_optional_json(path: str | Path) -> dict[str, Any] | None:
-    file_path = Path(path)
-    if not file_path.exists():
-        return None
-    return json.loads(file_path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

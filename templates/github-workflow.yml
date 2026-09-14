@@ -35,8 +35,14 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           show-usage: "true"
           usage-report: .llm-fuzz/reports/llm-usage.json
-          # Set to "true" only if this workflow restores old .llm-fuzz/cases first.
-          reuse-existing-cases: "false"
+
+      - name: Show generated inputs
+        run: |
+          llm-fuzz-ci cases \
+            --corpus-dir .llm-fuzz/cases \
+            --output .llm-fuzz/reports/generated-inputs.md
+          cat .llm-fuzz/reports/generated-inputs.md
+          cat .llm-fuzz/reports/generated-inputs.md >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -44,10 +50,10 @@ jobs:
           path: |
             .llm-fuzz/targets.json
             .llm-fuzz/cases
-            .llm-fuzz/reports/llm-usage.json
+            .llm-fuzz/reports
           if-no-files-found: error
 
-  replay-fuzz-cases:
+  test-fuzz-cases:
     needs: generate-fuzz-cases
     runs-on: ubuntu-latest
     permissions:
@@ -74,32 +80,67 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install -e .
 
-      - name: Replay fuzz cases
-        id: replay
+      - name: Test fuzz cases
+        id: test_fuzz_cases
         continue-on-error: true
         env:
           PYTHONPATH: src
         run: |
-          llm-fuzz-ci replay \
+          llm-fuzz-ci test-fuzz-cases \
             --corpus-dir .llm-fuzz/cases \
-            --report .llm-fuzz/reports/replay-report.json \
+            --report .llm-fuzz/reports/test-report.json \
             --require-cases \
             -- tests -q
 
-      - name: Render report
-        if: steps.replay.outcome == 'failure'
+      - name: Show test report
+        if: always()
         run: |
+          if [ ! -f .llm-fuzz/reports/test-report.json ]; then
+            echo "No LLM Fuzz CI test report was produced."
+            exit 0
+          fi
           llm-fuzz-ci report \
-            --report .llm-fuzz/reports/replay-report.json \
+            --report .llm-fuzz/reports/test-report.json \
             --format markdown \
+            --all \
             --show-failure-details \
-            --output .llm-fuzz/reports/replay-report.md
+            --output .llm-fuzz/reports/test-report.md
+          cat .llm-fuzz/reports/test-report.md
+          cat .llm-fuzz/reports/test-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write full report artifact
+        if: always()
+        run: |
+          llm-fuzz-ci summary \
+            --corpus-dir .llm-fuzz/cases \
+            --report .llm-fuzz/reports/test-report.json \
+            --usage-report .llm-fuzz/reports/llm-usage.json \
+            --output .llm-fuzz/reports/llm-fuzz-ci-report.md
+
+      - name: Analyze test report
+        id: test_report
+        if: always()
+        run: |
+          if [ ! -f .llm-fuzz/reports/test-report.json ]; then
+            echo "failed_cases=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python - <<'PY'
+          import json
+          import os
+
+          report = json.load(open(".llm-fuzz/reports/test-report.json"))
+          failed = int(report.get("summary", {}).get("failed_cases", 0))
+          print(f"Failed generated inputs: {failed}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"failed_cases={failed}\n")
+          PY
 
       - name: Create GitHub issue
-        if: steps.replay.outcome == 'failure'
+        if: steps.test_report.outputs.failed_cases != '0'
         uses: actions/github-script@v9
         env:
-          REPORT_PATH: .llm-fuzz/reports/replay-report.md
+          REPORT_PATH: .llm-fuzz/reports/test-report.md
         with:
           script: |
             const fs = require('fs');
@@ -112,5 +153,5 @@ jobs:
             });
 
       - name: Fail workflow
-        if: steps.replay.outcome == 'failure'
+        if: steps.test_fuzz_cases.outcome == 'failure'
         run: exit 1

@@ -4,8 +4,8 @@ Recommended production shape:
 
 1. `llm-fuzz-ci/actions/generate` runs the coding agent and writes JSONL input cases.
 2. `actions/upload-artifact` stores those input files as ordinary data.
-3. The normal test job installs the pytest plugin and runs replay with pytest.
-4. Alerting is handled by existing GitHub Actions or `gh`, not by a custom replay action.
+3. The normal test job installs the pytest plugin and tests those inputs with pytest.
+4. Alerting is handled by existing GitHub Actions or `gh`, not by a custom test action.
 
 This keeps the agent away from the environment that executes the project's full
 test/runtime setup. The generation job still receives the LLM provider key, so
@@ -15,7 +15,7 @@ secrets in that job.
 ## One-Call Reusable Workflow
 
 Use this when you want a minimal setup in the caller repository while preserving
-separate generation and replay jobs:
+separate generation and test jobs:
 
 ```yaml
 jobs:
@@ -39,7 +39,7 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 ```
 
-Do not use a composite action for all-in-one generation plus replay if you need
+Do not use a composite action for all-in-one generation plus testing if you need
 environment isolation. Composite action steps run inside the caller job.
 
 ## One Workflow, Two Jobs
@@ -85,8 +85,14 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           show-usage: "true"
           usage-report: .llm-fuzz/reports/llm-usage.json
-          # Set to "true" only if this workflow restores old .llm-fuzz/cases first.
-          reuse-existing-cases: "false"
+
+      - name: Show generated inputs
+        run: |
+          llm-fuzz-ci cases \
+            --corpus-dir .llm-fuzz/cases \
+            --output .llm-fuzz/reports/generated-inputs.md
+          cat .llm-fuzz/reports/generated-inputs.md
+          cat .llm-fuzz/reports/generated-inputs.md >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -94,10 +100,10 @@ jobs:
           path: |
             .llm-fuzz/targets.json
             .llm-fuzz/cases
-            .llm-fuzz/reports/llm-usage.json
+            .llm-fuzz/reports
           if-no-files-found: error
 
-  replay-fuzz-cases:
+  test-fuzz-cases:
     needs: generate-fuzz-cases
     runs-on: ubuntu-latest
     permissions:
@@ -124,40 +130,56 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install -e .
 
-      - name: Replay fuzz cases
-        id: replay
+      - name: Test fuzz cases
+        id: test_fuzz_cases
         continue-on-error: true
         env:
           PYTHONPATH: src
         run: |
-          llm-fuzz-ci replay \
+          llm-fuzz-ci test-fuzz-cases \
             --corpus-dir .llm-fuzz/cases \
-            --report .llm-fuzz/reports/replay-report.json \
+            --report .llm-fuzz/reports/test-report.json \
             --require-cases \
             -- tests -q
 
-      - name: Render report
-        if: steps.replay.outcome == 'failure'
+      - name: Show test report
+        if: always()
         run: |
+          if [ ! -f .llm-fuzz/reports/test-report.json ]; then
+            echo "No LLM Fuzz CI test report was produced."
+            exit 0
+          fi
           llm-fuzz-ci report \
-            --report .llm-fuzz/reports/replay-report.json \
+            --report .llm-fuzz/reports/test-report.json \
             --format markdown \
+            --all \
             --show-failure-details \
-            --output .llm-fuzz/reports/replay-report.md
+            --output .llm-fuzz/reports/test-report.md
+          cat .llm-fuzz/reports/test-report.md
+          cat .llm-fuzz/reports/test-report.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload replay report
+      - name: Write full report artifact
+        if: always()
+        run: |
+          llm-fuzz-ci summary \
+            --corpus-dir .llm-fuzz/cases \
+            --report .llm-fuzz/reports/test-report.json \
+            --usage-report .llm-fuzz/reports/llm-usage.json \
+            --output .llm-fuzz/reports/llm-fuzz-ci-report.md
+
+      - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: llm-fuzz-report
+          name: llm-fuzz-test-report
           path: .llm-fuzz/reports
           if-no-files-found: ignore
 
       - name: Create GitHub issue
-        if: steps.replay.outcome == 'failure'
+        if: steps.test_fuzz_cases.outcome == 'failure'
         uses: actions/github-script@v9
         env:
-          REPORT_PATH: .llm-fuzz/reports/replay-report.md
+          REPORT_PATH: .llm-fuzz/reports/test-report.md
         with:
           script: |
             const fs = require('fs');
@@ -170,7 +192,7 @@ jobs:
             });
 
       - name: Fail workflow
-        if: steps.replay.outcome == 'failure'
+        if: steps.test_fuzz_cases.outcome == 'failure'
         run: exit 1
 ```
 
@@ -182,24 +204,7 @@ For public repositories, the safest default is even stricter:
   `push`;
 - review and commit the generated `.llm-fuzz/cases/*.jsonl` files like test
   fixtures;
-- run only replay on untrusted pull requests, with no LLM API secrets.
+- run only the test job on untrusted pull requests, with no LLM API secrets.
 
 Avoid `pull_request_target` for any workflow that checks out and executes pull
 request code with secrets.
-
-## Preserving Old Cases
-
-The generation action replaces generated case files by default. To keep old
-cases, first restore them into `.llm-fuzz/cases`, then set:
-
-```yaml
-reuse-existing-cases: "true"
-```
-
-Good persistence options:
-
-- commit reviewed `.llm-fuzz/cases/*.jsonl` files to the repository;
-- download a previous workflow artifact before generation;
-- sync the corpus from external storage such as S3/GCS/Azure Blob;
-- use the GitHub cache only for non-sensitive corpora and with the usual cache
-  immutability/security caveats.

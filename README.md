@@ -1,23 +1,18 @@
 # LLM Fuzz CI
 
-Adversarial input generation for GitHub Actions.
+Generate adversarial inputs with Codex or Claude Code, then test them with your
+own pytest assertions in GitHub Actions.
 
-LLM Fuzz CI uses Codex or Claude Code to inspect your marked tests and generate
-inputs that are likely to break security-sensitive code. Those inputs are then
-replayed by pytest using your own assertions.
-
-The agent generates **inputs only**. It does not write tests, write assertions,
-or decide whether the run passed.
+The coding agent only creates inputs. Your tests decide what is safe.
 
 ## Quick Start
 
-Add this workflow to `.github/workflows/llm-fuzz-ci.yml`:
+Add `.github/workflows/llm-fuzz-ci.yml`:
 
 ```yaml
 name: LLM Fuzz CI
 
 on:
-  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -42,13 +37,7 @@ jobs:
 
 Then add `OPENAI_API_KEY` to your repository secrets.
 
-That is the normal setup. You do not need to install the Python package in your
-repository just to use the GitHub workflow; the workflow installs its own runner
-tooling.
-
-## Mark Tests To Fuzz
-
-In your pytest suite, mark the tests that should receive generated inputs:
+## Mark A Test
 
 ```python
 import pytest
@@ -57,7 +46,7 @@ from app import divide
 
 
 @pytest.mark.llm_fuzz(budget_usd=0.25)
-def test_divide_handles_fuzz_cases(llm_fuzz_case):
+def test_divide_handles_adversarial_inputs(llm_fuzz_case):
     try:
         result = divide(**llm_fuzz_case.input)
     except ZeroDivisionError:
@@ -66,65 +55,59 @@ def test_divide_handles_fuzz_cases(llm_fuzz_case):
     assert result is None or isinstance(result, (int, float))
 ```
 
-The marker declares a target. The fixture provides one generated input at a
-time through `llm_fuzz_case.input`.
+`llm_fuzz_case.input` is one generated input object. `budget_usd` is required
+and applies to that marked test.
 
-`budget_usd` is required. It is the generation budget for that marked test.
+## Read The Results
 
-If another pytest job also selects these tests, install LLM Fuzz CI from GitHub
-in that job too, or keep fuzz harnesses in a path that only this workflow runs.
+Open the workflow run in GitHub Actions. The run summary and logs show:
 
-## What Happens In CI
+- every generated input;
+- the target test for each input;
+- category and rationale metadata;
+- pass/fail result for each tested input;
+- compact failure details when an assertion fails;
+- token usage when `show-usage: true`.
 
-The reusable workflow runs two isolated jobs:
+You do not need to download artifacts to understand the run.
 
-1. **Generate**: Codex or Claude Code reads the repository and writes JSONL
-   input cases. Each marked test is generated in its own agent run.
-2. **Replay**: a fresh checkout runs pytest against those cases.
+When you do want the whole run in one place, download the `llm-fuzz-ci-report`
+artifact and open `llm-fuzz-ci-report.md`. It is a single Markdown document:
 
-If replay fails, the workflow fails. If `create-issue: true` is enabled, the
-workflow also opens a GitHub issue containing the failing input and pytest
-failure excerpt.
+- a summary table, and one sentence saying what the run means;
+- failing inputs first, each with its input, rationale, and failure excerpt;
+- then every generated input, grouped by target and marked `passed`, `failed`,
+  or `not tested`;
+- token usage when the agent reported it.
 
-Issue creation requires:
+Inputs that were generated but never run show up as `not tested`. That usually
+means the agent returned a `target_id` that matches no collected test, so those
+inputs silently assert nothing.
 
-- GitHub Issues enabled on the repository.
-- `issues: write` in workflow permissions.
+The same folder keeps `test-report.json` and `llm-usage.json` for tooling.
 
-## Generated Case Format
+If a generated input fails one of your marked tests:
 
-Cases are saved under `.llm-fuzz/cases/*.jsonl`.
+- the workflow fails when `hard-fail: true`;
+- a GitHub issue is created when `create-issue: true`;
+- the issue contains the readable test report.
 
-```json
-{"target_id":"tests/test_app.py::test_divide_handles_fuzz_cases","input":{"x":1,"y":0},"category":"zero-denominator","rationale":"Checks unguarded division by zero."}
+Issue creation requires GitHub Issues to be enabled and `issues: write`
+permission in the workflow.
+
+## Agents And Models
+
+Use Codex:
+
+```yaml
+with:
+  agent: codex
+  model: gpt-5.6-terra
+secrets:
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 ```
 
-Fields:
-
-- `target_id`: marked pytest test id.
-- `input`: data passed to the test.
-- `category`: short label.
-- `rationale`: why the input is interesting.
-
-## Configuration
-
-Common workflow inputs:
-
-| Input | Purpose |
-| --- | --- |
-| `test-paths` | pytest paths to collect and replay |
-| `setup-command` | installs your project dependencies before pytest runs |
-| `pythonpath` | useful for `src/` layouts or unpackaged repos |
-| `agent` | `codex` or `claude` |
-| `model` | model name passed to the selected agent |
-| `provider` | optional Codex provider, for example `openrouter` |
-| `max-budget-usd` | optional override for every marker budget |
-| `max-cases` | optional maximum cases per marked test |
-| `show-usage` | prints token usage when available |
-| `create-issue` | opens a GitHub issue on replay failure |
-| `hard-fail` | fails the workflow on replay failure |
-
-Claude Code example:
+Use Claude Code:
 
 ```yaml
 with:
@@ -134,7 +117,7 @@ secrets:
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-OpenRouter through Codex:
+Use OpenRouter through Codex:
 
 ```yaml
 with:
@@ -145,46 +128,23 @@ secrets:
   OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
-## Budgets
+## Workflow Inputs
 
-Every `@pytest.mark.llm_fuzz` marker must include `budget_usd`.
-
-LLM Fuzz CI runs generation once per marked test. With Claude Code, that value
-is passed as `--max-budget-usd` for that single target. With Codex, the current
-generic Codex CLI does not expose an equivalent hard budget flag, so the value
-is included in the target metadata and prompt; use workflow timeouts and
-provider-side limits as backstops.
-
-`max-budget-usd` in the workflow or CLI overrides every marker budget for that
-run.
-
-## Blocking Merges And Deployments
-
-`hard-fail: true` fails the workflow. To make that block releases:
-
-- make `LLM Fuzz CI` a required status check on protected branches;
-- make deployment jobs depend on it with `needs: llm-fuzz-ci`;
-- deploy production only from protected branches.
-
-```yaml
-jobs:
-  llm-fuzz-ci:
-    uses: llm-fuzz/llm-fuzz-ci/.github/workflows/llm-fuzz-ci.yml@v1
-    with:
-      hard-fail: true
-    secrets:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-
-  deploy:
-    needs: llm-fuzz-ci
-    runs-on: ubuntu-latest
-    steps:
-      - run: ./deploy.sh
-```
+| Input | Purpose |
+| --- | --- |
+| `test-paths` | pytest paths containing marked tests |
+| `setup-command` | installs your project test dependencies |
+| `pythonpath` | optional import path, useful for `src/` layouts |
+| `agent` | `codex` or `claude` |
+| `model` | model passed to the selected agent |
+| `provider` | optional Codex provider, for example `openrouter` |
+| `max-budget-usd` | optional override for every marker budget |
+| `max-cases` | optional maximum inputs per marked test |
+| `show-usage` | prints token usage when available |
+| `create-issue` | opens a GitHub issue on generated-input failure |
+| `hard-fail` | fails the workflow on generated-input failure |
 
 ## Local Debugging
-
-Local runs are useful when you want to inspect generated cases before pushing.
 
 ```bash
 python -m pip install "git+https://github.com/llm-fuzz/llm-fuzz-ci.git@v1"
@@ -192,46 +152,29 @@ export CODEX_API_KEY="sk-replace-me"
 
 llm-fuzz-ci collect tests --output .llm-fuzz/targets.json
 llm-fuzz-ci generate --agent codex --model gpt-5.6-terra --show-usage
-llm-fuzz-ci replay --require-cases -- tests -q
-llm-fuzz-ci report --show-failure-details
+llm-fuzz-ci cases
+llm-fuzz-ci test-fuzz-cases --require-cases -- tests -q
+llm-fuzz-ci report --all --show-failure-details
+llm-fuzz-ci summary --output .llm-fuzz/reports/llm-fuzz-ci-report.md
 ```
 
-For local development from this repository:
-
-```bash
-cd /Users/utilisateur/Documents/LLM/llm-fuzz/llm-fuzz-ci
-python -m pip install -e .
-```
-
-## Demo
-
-```bash
-cd /Users/utilisateur/Documents/LLM/llm-fuzz/llm-fuzz-ci
-python -m pip install -e .
-
-cd demos/demo-codebase
-python -m pip install -e .
-
-export CODEX_API_KEY="sk-replace-me"
-
-llm-fuzz-ci collect tests --output .llm-fuzz/targets.json
-llm-fuzz-ci generate --agent codex --model gpt-5.6-terra --show-usage
-llm-fuzz-ci replay --require-cases -- tests -q
-llm-fuzz-ci report --show-failure-details
-```
+`report` prints the pass/fail outcome for the terminal. `summary` writes the
+combined Markdown document that CI uploads as an artifact.
 
 ## Status
 
 Implemented:
 
-- Python/pytest replay.
-- Codex and Claude Code generation.
-- GitHub reusable workflow.
-- GitHub issue alerting.
+- GitHub reusable workflow;
+- isolated generate and test jobs;
+- Python/pytest support;
+- Codex and Claude Code generation;
+- readable GitHub Actions summaries;
+- GitHub issue alerting;
 - token usage reporting.
 
 Not implemented yet:
 
-- Node/Vitest replay.
-- automatic test/assertion generation.
+- Node/Vitest support;
+- automatic test/assertion generation;
 - SARIF/code scanning output.

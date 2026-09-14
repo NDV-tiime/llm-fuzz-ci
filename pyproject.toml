@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "llm-fuzz-ci"
 version = "0.1.0"
-description = "CI-oriented LLM fuzz case generation and replay"
+description = "CI-oriented LLM fuzz case generation and testing"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

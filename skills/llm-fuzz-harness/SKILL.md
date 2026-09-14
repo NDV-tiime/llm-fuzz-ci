@@ -57,7 +57,7 @@ Avoid:
 - Committing generated fuzz inputs while creating the harness, unless the user explicitly asks.
 - Making brittle keyword checks unrelated to a concrete policy.
 - Swallowing all exceptions as success.
-- Calling real external services from fuzz replay unless the project already has isolated fixtures/mocks.
+- Calling real external services from generated-input tests unless the project already has isolated fixtures/mocks.
 
 ## Examples
 
@@ -96,4 +96,4 @@ def test_support_agent_prompt_injection(llm_fuzz_case, fake_llm, fake_tools):
 
 ## Final Check
 
-Before finishing, report which tests were marked and what each assertion protects. Remind the user to run `llm-fuzz-ci collect`, `llm-fuzz-ci generate`, and `llm-fuzz-ci replay` after installing LLM Fuzz CI.
+Before finishing, report which tests were marked and what each assertion protects. Remind the user to run `llm-fuzz-ci collect`, `llm-fuzz-ci generate`, `llm-fuzz-ci cases`, and `llm-fuzz-ci test-fuzz-cases` after installing LLM Fuzz CI.
