@@ -14,20 +14,18 @@ def test_parse_agent_cases_accepts_structured_output():
         {
           "cases": [
             {
-              "target_id": "divide",
               "input_json": "{\\"x\\": 1, \\"y\\": 0}",
-              "category": "zero-denominator",
               "rationale": "Division by zero"
             }
           ]
         }
-        """
+        """,
+        "tests/test_app.py::test_divide",
     )
 
     assert len(cases) == 1
-    assert cases[0].target_id == "divide"
+    assert cases[0].target_id == "tests/test_app.py::test_divide"
     assert cases[0].input == {"x": 1, "y": 0}
-    assert cases[0].category == "zero-denominator"
     assert cases[0].rationale == "Division by zero"
 
 
@@ -47,7 +45,7 @@ def test_agent_prompt_is_rendered_from_template(tmp_path):
     assert str(tmp_path) in prompt
     assert '"id": "divide"' in prompt
     assert '"budget_usd": 0.25' in prompt
-    assert "Every case must include target_id, input_json, category, and rationale." in prompt
+    assert "Every case must include input_json and rationale." in prompt
 
 
 def test_global_max_cases_overrides_agent_targets(monkeypatch):
@@ -320,3 +318,38 @@ def test_process_failure_summarizes_billing_error_and_redacts_key():
     assert "sk-proj-secret" not in message
     assert "sk-redacted" in message
     assert "very long prompt body" not in message
+
+
+def test_process_failure_explains_a_workspaceless_api_key():
+    completed = subprocess.CompletedProcess(
+        args=["claude"],
+        returncode=1,
+        stdout=(
+            '{"is_error":true,"api_error_status":400,"result":"API Error: 400 This API key '
+            "is not scoped to a workspace, so this request must include the "
+            'anthropic-workspace-id header with the ID of the workspace to use."}'
+        ),
+        stderr="",
+    )
+
+    message = generator._format_process_failure("Claude", ["claude"], completed)
+
+    assert "likely cause:" in message
+    assert "anthropic-workspace-id input" in message
+
+
+def test_process_failure_explains_a_provider_policy_refusal():
+    completed = subprocess.CompletedProcess(
+        args=["codex"],
+        returncode=1,
+        stdout=(
+            '{"type":"turn.failed","error":{"message":"This content was flagged for '
+            'possible cybersecurity risk."}}'
+        ),
+        stderr="",
+    )
+
+    message = generator._format_process_failure("Codex", ["codex"], completed)
+
+    assert "refused the request under its cybersecurity" in message
+    assert "--agent claude" in message

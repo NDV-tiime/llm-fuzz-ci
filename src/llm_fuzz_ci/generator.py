@@ -163,7 +163,7 @@ def _generate_with_codex(
             else completed.stdout
         )
         return GenerationResult(
-            _parse_agent_cases(output_text),
+            _parse_agent_cases(output_text, targets[0].id),
             extract_usage_from_json_events(
                 completed.stdout,
                 provider=_usage_provider_for_codex(provider),
@@ -205,7 +205,7 @@ def _generate_with_claude(
     if completed.returncode != 0:
         raise RuntimeError(_format_process_failure("Claude", cmd, completed))
     return GenerationResult(
-        _parse_agent_cases(completed.stdout),
+        _parse_agent_cases(completed.stdout, targets[0].id),
         extract_usage_from_json_events(
             completed.stdout,
             provider="anthropic",
@@ -504,17 +504,23 @@ def _dedupe_preserving_order(lines: list[str]) -> list[str]:
     return deduped
 
 
-def _parse_agent_cases(output_text: str) -> list[FuzzCase]:
+def _parse_agent_cases(output_text: str, target_id: str) -> list[FuzzCase]:
+    """Parse one agent reply into cases for the target that was requested.
+
+    Generation is one target per agent call, so the target id is assigned here
+    rather than trusted from the reply. An agent that mangles or invents a
+    target id used to produce a corpus file no test ever reads.
+    """
     raw = json.loads(_strip_markdown(output_text))
     if "result" in raw and isinstance(raw["result"], str):
         raw = json.loads(_strip_markdown(raw["result"]))
     if "cases" not in raw:
         raise ValueError("Agent output must contain a top-level 'cases' list")
 
-    cases: list[FuzzCase] = []
-    for item in raw["cases"]:
-        cases.append(FuzzCase.from_dict(dict(item)))
-    return cases
+    return [
+        FuzzCase.from_dict(dict(item), target_id=target_id)
+        for item in raw["cases"]
+    ]
 
 
 def _strip_markdown(text: str) -> str:

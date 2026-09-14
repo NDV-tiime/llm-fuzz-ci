@@ -143,7 +143,6 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[Any]):
         "target_id": case.target_id,
         "case_id": case.id,
         "input": case.input,
-        "category": case.category,
         "rationale": case.rationale,
     }
     if report.failed:

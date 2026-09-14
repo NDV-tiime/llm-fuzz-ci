@@ -37,9 +37,8 @@ def format_test_report_text(
         lines.extend(
             [
                 f"{index}. [{outcome}] {entry.get('target_id')} / {entry.get('case_id')}",
-                f"   Category: {entry.get('category')}",
                 f"   Test: {entry.get('nodeid')}",
-                f"   Rationale: {entry.get('rationale')}",
+                f"   Why this input: {entry.get('rationale')}",
                 "   Input:",
                 _indent(_json(entry.get("input")), "     "),
             ]
@@ -84,9 +83,8 @@ def format_test_report_markdown(
                 f"### {entry.get('target_id')} / {entry.get('case_id')}",
                 "",
                 f"- Outcome: `{entry.get('outcome')}`",
-                f"- Category: `{entry.get('category')}`",
                 f"- Test: `{entry.get('nodeid')}`",
-                f"- Rationale: {entry.get('rationale')}",
+                f"- Why this input: {entry.get('rationale')}",
                 "",
                 "**Input**",
                 "",
@@ -138,8 +136,7 @@ def format_cases_markdown(
                 [
                     f"### Input {index}",
                     "",
-                    f"- Category: `{case.category}`",
-                    f"- Rationale: {case.rationale}",
+                    f"- Why this input: {case.rationale}",
                     "",
                     "**Input**",
                     "",
@@ -235,12 +232,9 @@ def _overview_table(
     test_report: dict[str, Any] | None,
 ) -> list[str]:
     if test_report is None:
-        lines = ["| Target | Inputs | Categories |", "| --- | --: | --- |"]
+        lines = ["| Target | Inputs |", "| --- | --: |"]
         for target_id, group in groups:
-            lines.append(
-                f"| `{_short_target(target_id)}` | {len(group)} "
-                f"| {_category_list(group)} |"
-            )
+            lines.append(f"| `{_short_target(target_id)}` | {len(group)} |")
         return lines + [""]
 
     untested = any(entry["outcome"] == "not tested" for _, g in groups for entry in g)
@@ -317,7 +311,7 @@ def _overview_case(
     index: int | None = None,
     include_failure: bool = False,
 ) -> list[str]:
-    metadata = f"`{entry.get('category')}` · `{entry['outcome']}`"
+    metadata = f"`{entry['outcome']}`"
     if index is not None:
         label = f"**{index}.** {metadata}"
     else:
@@ -353,16 +347,6 @@ def _compact_input_block(value: Any) -> list[str]:
 def _short_target(target_id: str) -> str:
     return str(target_id).rsplit("::", 1)[-1]
 
-
-def _category_list(group: list[dict[str, Any]], limit: int = 3) -> str:
-    seen: list[str] = []
-    for entry in group:
-        category = str(entry.get("category") or "")
-        if category and category not in seen:
-            seen.append(category)
-    shown = ", ".join(f"`{category}`" for category in seen[:limit])
-    extra = len(seen) - limit
-    return f"{shown}, +{extra}" if extra > 0 else shown or "—"
 
 
 def format_full_report_markdown(
@@ -408,7 +392,6 @@ def _merge_cases_and_results(
             {
                 "target_id": str(case.target_id),
                 "case_id": case_id,
-                "category": case.category,
                 "rationale": case.rationale,
                 "input": case.input,
                 "outcome": str(result.get("outcome", "not tested")),
@@ -426,7 +409,6 @@ def _merge_cases_and_results(
             {
                 "target_id": str(result.get("target_id", "unknown")),
                 "case_id": case_id,
-                "category": result.get("category"),
                 "rationale": result.get("rationale"),
                 "input": result.get("input"),
                 "outcome": str(result.get("outcome", "unknown")),
@@ -542,13 +524,13 @@ def _case_block(
     include_failure: bool,
 ) -> list[str]:
     lines = [
-        f"#### Input {index} — `{entry.get('category')}` — `{entry['outcome']}`",
+        f"#### Input {index} — `{entry['outcome']}`",
         "",
         _markdown_input(entry.get("input")),
         "",
     ]
     if entry.get("rationale"):
-        lines.extend([f"Rationale: {entry['rationale']}", ""])
+        lines.extend([f"Why this input: {entry['rationale']}", ""])
     if include_failure and entry.get("failure"):
         lines.extend(
             ["Failure excerpt:", "", "```text", _failure_excerpt(entry["failure"]), "```", ""]

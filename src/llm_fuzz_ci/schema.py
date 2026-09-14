@@ -11,7 +11,6 @@ from typing import Any, Iterable
 
 TARGET_SCHEMA_VERSION = "llm-fuzz.targets.v1"
 REPORT_SCHEMA_VERSION = "llm-fuzz.report.v1"
-DEFAULT_CASE_CATEGORY = "adversarial-input"
 DEFAULT_CASE_RATIONALE = "Generated adversarial input."
 
 
@@ -83,33 +82,35 @@ def _positive_float(data: dict[str, Any], key: str) -> float:
 class FuzzCase:
     target_id: str
     input: dict[str, Any]
-    category: str = DEFAULT_CASE_CATEGORY
     rationale: str = DEFAULT_CASE_RATIONALE
     id: str = ""
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "FuzzCase":
-        target_id = str(data["target_id"])
+    def from_dict(cls, data: dict[str, Any], *, target_id: str | None = None) -> "FuzzCase":
+        """Build a case from stored JSONL or from one agent reply.
+
+        `target_id` is supplied by the caller for agent output: generation runs
+        one target at a time, so the agent never needs to name the target, and
+        cannot mis-name it.
+        """
+        resolved = str(target_id if target_id is not None else data["target_id"])
         input_value = data.get("input", {})
         if "input_json" in data and "input" not in data:
             input_value = json.loads(str(data["input_json"]))
         if not isinstance(input_value, dict):
             raise ValueError(f"Fuzz case input must be an object: {data!r}")
-        category = str(data.get("category") or DEFAULT_CASE_CATEGORY)
         rationale = str(data.get("rationale") or DEFAULT_CASE_RATIONALE)
         return cls(
-            target_id=target_id,
+            target_id=resolved,
             input=input_value,
-            category=category,
             rationale=rationale,
-            id=str(data.get("id") or stable_case_id(target_id, input_value)),
+            id=str(data.get("id") or stable_case_id(resolved, input_value)),
         )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "target_id": self.target_id,
             "input": self.input,
-            "category": self.category,
             "rationale": self.rationale,
         }
 
@@ -118,13 +119,11 @@ def make_case(
     *,
     target_id: str,
     input_value: dict[str, Any],
-    category: str = DEFAULT_CASE_CATEGORY,
     rationale: str = DEFAULT_CASE_RATIONALE,
 ) -> FuzzCase:
     return FuzzCase(
         target_id=target_id,
         input=input_value,
-        category=category,
         rationale=rationale,
         id=stable_case_id(target_id, input_value),
     )
@@ -216,18 +215,17 @@ AGENT_OUTPUT_SCHEMA: dict[str, Any] = {
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
-                    "target_id": {"type": "string"},
                     "input_json": {
                         "type": "string",
                         "description": "A JSON-encoded object containing the generated input parameters.",
                     },
-                    "category": {"type": "string"},
-                    "rationale": {"type": "string"},
+                    "rationale": {
+                        "type": "string",
+                        "description": "One sentence on what weakness this input probes.",
+                    },
                 },
                 "required": [
-                    "target_id",
                     "input_json",
-                    "category",
                     "rationale",
                 ],
             },

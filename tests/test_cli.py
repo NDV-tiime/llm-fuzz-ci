@@ -36,7 +36,6 @@ def test_generate_replaces_stale_cases_by_default(tmp_path, monkeypatch):
     stale = make_case(
         target_id="divide",
         input_value={"x": 1, "y": 0},
-        category="zero-denominator",
         rationale="old",
     )
     write_cases(tmp_path / "cases", [stale], merge=False)
@@ -56,7 +55,6 @@ def test_cases_command_renders_generated_inputs(tmp_path, capsys):
             make_case(
                 target_id="divide",
                 input_value={"x": 1, "y": 0},
-                category="zero-denominator",
                 rationale="Checks division by zero.",
             )
         ],
@@ -82,7 +80,6 @@ def test_summary_command_writes_one_combined_markdown_report(tmp_path, capsys):
     case = make_case(
         target_id="divide",
         input_value={"x": 1, "y": 0},
-        category="zero-denominator",
         rationale="Checks division by zero.",
     )
     write_cases(tmp_path / "cases", [case], merge=False)
@@ -98,7 +95,6 @@ def test_summary_command_writes_one_combined_markdown_report(tmp_path, capsys):
                         "target_id": "divide",
                         "nodeid": "tests/test_app.py::test_divide[zero]",
                         "outcome": "failed",
-                        "category": "zero-denominator",
                         "input": {"x": 1, "y": 0},
                         "rationale": "Checks division by zero.",
                         "failure": "E   AssertionError: divide should guard y=0",

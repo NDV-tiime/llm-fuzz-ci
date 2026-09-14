@@ -68,7 +68,7 @@ There are two surfaces, and they are deliberately different lengths.
 - one row per marked test, with input counts and pass/fail/not-tested totals;
 - every failing input in full, expanded, with its payload and failure excerpt;
 - then one collapsed section per marked test, holding every input it was given
-  with its category, rationale, outcome, and payload;
+  with its outcome, payload, and one line on what it probes;
 - the agent, model, and token total.
 
 Collapsed, each marked test costs one line, so the digest grows with how many
@@ -122,6 +122,20 @@ secrets:
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
+If the Anthropic console says your key is not tied to a workspace, the API
+rejects every request with `400 ... must include the anthropic-workspace-id
+header`. Either create the key inside a workspace, or name the workspace:
+
+```yaml
+with:
+  agent: claude
+  model: sonnet
+  anthropic-workspace-id: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+```
+
+A workspace id is an identifier, not a credential, so a repository variable
+suits it better than a secret.
+
 Use OpenRouter through Codex:
 
 ```yaml
@@ -143,6 +157,7 @@ secrets:
 | `agent` | `codex` or `claude` |
 | `model` | model passed to the selected agent |
 | `provider` | optional Codex provider, for example `openrouter` |
+| `anthropic-workspace-id` | workspace for an Anthropic key not scoped to one |
 | `max-budget-usd` | optional override for every marker budget |
 | `max-cases` | optional maximum inputs per marked test |
 | `show-usage` | prints token usage when available |

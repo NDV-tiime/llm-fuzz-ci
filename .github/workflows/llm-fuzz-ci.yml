@@ -48,6 +48,11 @@ on:
         required: false
         type: string
         default: ""
+      anthropic-workspace-id:
+        description: Workspace id required when the Anthropic API key is not scoped to a workspace.
+        required: false
+        type: string
+        default: ""
       max-cases:
         description: Optional maximum generated cases per target.
         required: false
@@ -128,6 +133,7 @@ jobs:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           anthropic-base-url: ${{ inputs.anthropic-base-url }}
           anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          anthropic-workspace-id: ${{ inputs.anthropic-workspace-id }}
 
       - name: Show generated inputs
         shell: bash

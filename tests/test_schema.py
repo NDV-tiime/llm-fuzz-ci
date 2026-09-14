@@ -4,7 +4,6 @@ import pytest
 
 from llm_fuzz_ci.schema import (
     AGENT_OUTPUT_SCHEMA,
-    DEFAULT_CASE_CATEGORY,
     DEFAULT_CASE_RATIONALE,
     FuzzCase,
     FuzzTarget,
@@ -45,7 +44,6 @@ def test_cases_round_trip(tmp_path):
     case = make_case(
         target_id="divide",
         input_value={"x": 1, "y": 0},
-        category="zero-denominator",
         rationale="Division by zero",
     )
 
@@ -58,11 +56,10 @@ def test_cases_round_trip(tmp_path):
     assert "id" not in stored
     assert "source" not in stored
     assert "created_at" not in stored
-    assert stored["category"] == "zero-denominator"
     assert stored["rationale"] == "Division by zero"
 
 
-def test_default_case_storage_uses_default_category_and_rationale(tmp_path):
+def test_default_case_storage_uses_the_default_rationale(tmp_path):
     case = make_case(
         target_id="divide",
         input_value={"x": 1, "y": 1},
@@ -72,7 +69,7 @@ def test_default_case_storage_uses_default_category_and_rationale(tmp_path):
 
     assert (tmp_path / "divide.jsonl").read_text(encoding="utf-8") == (
         '{"target_id": "divide", "input": {"x": 1, "y": 1}, '
-        '"category": "adversarial-input", "rationale": "Generated adversarial input."}\n'
+        '"rationale": "Generated adversarial input."}\n'
     )
 
 
@@ -96,20 +93,18 @@ def test_old_case_metadata_is_accepted_but_not_rewritten(tmp_path):
     assert '"schema_version"' not in rewritten
     assert '"source"' not in rewritten
     assert '"created_at"' not in rewritten
-    assert '"category": "zero-denominator"' in rewritten
+    assert '"category"' not in rewritten  # dropped on rewrite
 
 
 def test_write_cases_can_replace_or_merge_existing_corpus(tmp_path):
     old_case = make_case(
         target_id="divide",
         input_value={"x": 1, "y": 0},
-        category="zero-denominator",
         rationale="old",
     )
     new_case = make_case(
         target_id="divide",
         input_value={"x": 4, "y": 2},
-        category="normal",
         rationale="new",
     )
 
@@ -129,7 +124,6 @@ def test_agent_input_json_is_parsed_to_case_input():
         {
             "target_id": "divide",
             "input_json": '{"x": 1, "y": 0}',
-            "category": "zero-denominator",
             "rationale": "Division by zero",
         }
     )
@@ -137,10 +131,9 @@ def test_agent_input_json_is_parsed_to_case_input():
     assert case.input == {"x": 1, "y": 0}
 
 
-def test_missing_case_category_and_rationale_use_defaults():
+def test_missing_case_rationale_uses_the_default():
     case = FuzzCase.from_dict({"target_id": "divide", "input": {"x": 1, "y": 1}})
 
-    assert case.category == DEFAULT_CASE_CATEGORY
     assert case.rationale == DEFAULT_CASE_RATIONALE
 
 
@@ -149,9 +142,5 @@ def test_agent_schema_uses_string_encoded_inputs():
 
     assert "input" not in case_schema["properties"]
     assert case_schema["properties"]["input_json"]["type"] == "string"
-    assert case_schema["required"] == [
-        "target_id",
-        "input_json",
-        "category",
-        "rationale",
-    ]
+    assert case_schema["required"] == ["input_json", "rationale"]
+    assert "target_id" not in case_schema["properties"]

@@ -9,9 +9,9 @@ Rules:
 - Analyze only the listed targets and their reachable helpers.
 - Produce adversarial inputs, not executable test code or assertions.
 - Return only JSON that matches the provided schema.
-- Every case must include target_id, input_json, category, and rationale.
-- Every case.target_id must exactly match one of the listed target id values.
+- Every case must include input_json and rationale.
 - Every case.input_json value must be a valid JSON object encoded as a string.
+- rationale is one sentence saying what weakness the input probes.
 - Every target includes budget_usd. Generate the best cases you can for that target within that budget.
 - Infer the input_json keys from the marked pytest harness, especially llm_fuzz_case.input access patterns and calls made by the test.
 - Example input_json for an inferred ["x", "y"] shape: {{EXAMPLE_INPUT_JSON}}
