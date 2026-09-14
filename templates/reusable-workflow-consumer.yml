@@ -1,0 +1,28 @@
+name: LLM Fuzz CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 2 * * *"
+
+jobs:
+  llm-fuzz-ci:
+    uses: llm-fuzz/llm-fuzz-ci/.github/workflows/llm-fuzz-ci.yml@v1
+    permissions:
+      contents: read
+      issues: write
+    with:
+      test-paths: tests
+      setup-command: |
+        python -m pip install -U pip
+        python -m pip install -r requirements.txt
+        python -m pip install -e .
+      pythonpath: src
+      agent: codex
+      model: gpt-5.6-terra
+      show-usage: true
+      create-issue: true
+      hard-fail: true
+    secrets:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

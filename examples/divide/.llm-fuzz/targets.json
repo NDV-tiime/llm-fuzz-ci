@@ -1,0 +1,16 @@
+{
+  "generated_at": "2026-09-14T00:00:00Z",
+  "schema_version": "llm-fuzz.targets.v1",
+  "targets": [
+    {
+      "budget_usd": 0.05,
+      "description": "Divide must not leak raw ZeroDivisionError for user-supplied numbers.",
+      "id": "examples/divide/test_divide_fuzz.py::test_divide_handles_saved_fuzz_cases",
+      "language": "python",
+      "max_cases": 8,
+      "source_file": "examples/divide/test_divide_fuzz.py",
+      "target": "pytest::examples/divide/test_divide_fuzz.py::test_divide_handles_saved_fuzz_cases",
+      "test_nodeid": "examples/divide/test_divide_fuzz.py::test_divide_handles_saved_fuzz_cases"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+name: LLM Fuzz CI
+description: Safety guard for the root action entrypoint.
+
+runs:
+  using: composite
+  steps:
+    - name: Use the isolated reusable workflow
+      shell: bash
+      run: |
+        echo "::error::The root composite action is intentionally disabled because composite action steps run inside the caller job. Use llm-fuzz/llm-fuzz-ci/.github/workflows/llm-fuzz-ci.yml@v1 for isolated generation and replay, or llm-fuzz/llm-fuzz-ci/actions/generate@v1 for generation only."
+        exit 1

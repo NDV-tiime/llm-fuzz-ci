@@ -1,0 +1,186 @@
+name: Generate LLM Fuzz Cases
+description: Collect marked fuzz targets and generate saved adversarial input cases.
+
+inputs:
+  working-directory:
+    description: Repository subdirectory where collection and generation run.
+    required: false
+    default: "."
+  test-paths:
+    description: Space-separated pytest paths to collect.
+    required: false
+    default: tests
+  setup-command:
+    description: Optional shell command to prepare the project before collecting targets.
+    required: false
+    default: ""
+  pythonpath:
+    description: Optional PYTHONPATH used for collect and generate.
+    required: false
+    default: ""
+  targets:
+    description: Path where collected target metadata is written.
+    required: false
+    default: .llm-fuzz/targets.json
+  corpus-dir:
+    description: Directory where saved fuzz cases are written.
+    required: false
+    default: .llm-fuzz/cases
+  reuse-existing-cases:
+    description: Merge generated cases with JSONL cases already present in corpus-dir.
+    required: false
+    default: "false"
+  agent:
+    description: "Fuzz case generator to use: codex or claude."
+    required: false
+    default: codex
+  model:
+    description: Optional model passed to the selected coding agent.
+    required: false
+    default: ""
+  provider:
+    description: Optional Codex model provider id. Use openrouter for the built-in OpenRouter shortcut.
+    required: false
+    default: ""
+  max-cases:
+    description: Optional maximum generated cases per target.
+    required: false
+    default: ""
+  max-turns:
+    description: Optional maximum Claude Code turns per target.
+    required: false
+    default: ""
+  max-budget-usd:
+    description: Optional override for each target's required marker budget. Claude Code receives it as a hard per-target budget.
+    required: false
+    default: ""
+  timeout-seconds:
+    description: Maximum generation time per target.
+    required: false
+    default: "600"
+  show-usage:
+    description: Print total LLM token usage after generation.
+    required: false
+    default: "false"
+  usage-report:
+    description: Optional path where LLM token usage metadata is written as JSON.
+    required: false
+    default: ".llm-fuzz/reports/llm-usage.json"
+  openai-api-key:
+    description: OpenAI API key for Codex generation.
+    required: false
+    default: ""
+  openrouter-api-key:
+    description: OpenRouter API key used when provider is openrouter.
+    required: false
+    default: ""
+  anthropic-api-key:
+    description: Anthropic API key for Claude generation.
+    required: false
+    default: ""
+  anthropic-base-url:
+    description: Optional Claude Code gateway base URL.
+    required: false
+    default: ""
+  anthropic-auth-token:
+    description: Optional Claude Code gateway bearer token.
+    required: false
+    default: ""
+  install-agent:
+    description: Install Codex CLI or Claude Code when the selected agent needs it.
+    required: false
+    default: "true"
+
+outputs:
+  targets:
+    description: Path to the collected target metadata.
+    value: ${{ inputs.targets }}
+  corpus-dir:
+    description: Directory containing generated fuzz case JSONL files.
+    value: ${{ inputs.corpus-dir }}
+  usage-report:
+    description: Path to the LLM token usage report.
+    value: ${{ inputs.usage-report }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install LLM Fuzz CI
+      shell: bash
+      run: python -m pip install "$GITHUB_ACTION_PATH/../.."
+
+    - name: Install Codex CLI
+      if: ${{ inputs.agent == 'codex' && inputs.install-agent == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/codex-bin"
+        curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 CODEX_INSTALL_DIR="$RUNNER_TEMP/codex-bin" sh
+        echo "$RUNNER_TEMP/codex-bin" >> "$GITHUB_PATH"
+        "$RUNNER_TEMP/codex-bin/codex" --version
+
+    - name: Install Claude Code
+      if: ${{ inputs.agent == 'claude' && inputs.install-agent == 'true' }}
+      shell: bash
+      run: npm install --global @anthropic-ai/claude-code
+
+    - name: Prepare project for target collection
+      if: ${{ inputs.setup-command != '' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        LLM_FUZZ_PYTHONPATH: ${{ inputs.pythonpath }}
+      run: |
+        set -euo pipefail
+        if [ -n "$LLM_FUZZ_PYTHONPATH" ]; then
+          export PYTHONPATH="$LLM_FUZZ_PYTHONPATH${PYTHONPATH:+:$PYTHONPATH}"
+        fi
+        ${{ inputs.setup-command }}
+
+    - name: Collect fuzz targets
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        LLM_FUZZ_PYTHONPATH: ${{ inputs.pythonpath }}
+      run: |
+        set -euo pipefail
+        if [ -n "$LLM_FUZZ_PYTHONPATH" ]; then
+          export PYTHONPATH="$LLM_FUZZ_PYTHONPATH${PYTHONPATH:+:$PYTHONPATH}"
+        fi
+        llm-fuzz-ci collect ${{ inputs.test-paths }} --output "${{ inputs.targets }}"
+
+    - name: Generate fuzz cases
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        LLM_FUZZ_PYTHONPATH: ${{ inputs.pythonpath }}
+        LLM_FUZZ_INPUT_OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        LLM_FUZZ_INPUT_OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
+        LLM_FUZZ_INPUT_ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        LLM_FUZZ_INPUT_ANTHROPIC_BASE_URL: ${{ inputs.anthropic-base-url }}
+        LLM_FUZZ_INPUT_ANTHROPIC_AUTH_TOKEN: ${{ inputs.anthropic-auth-token }}
+      run: |
+        set -euo pipefail
+        if [ -n "$LLM_FUZZ_PYTHONPATH" ]; then
+          export PYTHONPATH="$LLM_FUZZ_PYTHONPATH${PYTHONPATH:+:$PYTHONPATH}"
+        fi
+        if [ -n "$LLM_FUZZ_INPUT_OPENAI_API_KEY" ]; then export CODEX_API_KEY="$LLM_FUZZ_INPUT_OPENAI_API_KEY"; fi
+        if [ -n "$LLM_FUZZ_INPUT_OPENROUTER_API_KEY" ]; then export OPENROUTER_API_KEY="$LLM_FUZZ_INPUT_OPENROUTER_API_KEY"; fi
+        if [ -n "$LLM_FUZZ_INPUT_ANTHROPIC_API_KEY" ]; then export ANTHROPIC_API_KEY="$LLM_FUZZ_INPUT_ANTHROPIC_API_KEY"; fi
+        if [ -n "$LLM_FUZZ_INPUT_ANTHROPIC_BASE_URL" ]; then export ANTHROPIC_BASE_URL="$LLM_FUZZ_INPUT_ANTHROPIC_BASE_URL"; fi
+        if [ -n "$LLM_FUZZ_INPUT_ANTHROPIC_AUTH_TOKEN" ]; then export ANTHROPIC_AUTH_TOKEN="$LLM_FUZZ_INPUT_ANTHROPIC_AUTH_TOKEN"; fi
+        extra=()
+        if [ -n "${{ inputs.model }}" ]; then extra+=(--model "${{ inputs.model }}"); fi
+        if [ -n "${{ inputs.provider }}" ]; then extra+=(--provider "${{ inputs.provider }}"); fi
+        if [ -n "${{ inputs.max-cases }}" ]; then extra+=(--max-cases "${{ inputs.max-cases }}"); fi
+        if [ -n "${{ inputs.max-turns }}" ]; then extra+=(--max-turns "${{ inputs.max-turns }}"); fi
+        if [ -n "${{ inputs.max-budget-usd }}" ]; then extra+=(--max-budget-usd "${{ inputs.max-budget-usd }}"); fi
+        if [ "${{ inputs.reuse-existing-cases }}" = "true" ]; then extra+=(--reuse-existing-cases); fi
+        if [ "${{ inputs.show-usage }}" = "true" ]; then extra+=(--show-usage); fi
+        if [ -n "${{ inputs.usage-report }}" ]; then extra+=(--usage-report "${{ inputs.usage-report }}"); fi
+        llm-fuzz-ci generate \
+          --agent "${{ inputs.agent }}" \
+          --targets "${{ inputs.targets }}" \
+          --corpus-dir "${{ inputs.corpus-dir }}" \
+          --timeout-seconds "${{ inputs.timeout-seconds }}" \
+          "${extra[@]}"

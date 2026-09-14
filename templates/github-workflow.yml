@@ -1,0 +1,116 @@
+name: LLM Fuzz CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 2 * * *"
+
+jobs:
+  generate-fuzz-cases:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: llm-fuzz/llm-fuzz-ci/actions/generate@v1
+        with:
+          test-paths: tests
+          setup-command: |
+            python -m pip install -U pip
+            python -m pip install -r requirements.txt
+            python -m pip install -e .
+          pythonpath: src
+          agent: codex
+          model: gpt-5.6-terra
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          show-usage: "true"
+          usage-report: .llm-fuzz/reports/llm-usage.json
+          # Set to "true" only if this workflow restores old .llm-fuzz/cases first.
+          reuse-existing-cases: "false"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: llm-fuzz-cases
+          path: |
+            .llm-fuzz/targets.json
+            .llm-fuzz/cases
+            .llm-fuzz/reports/llm-usage.json
+          if-no-files-found: error
+
+  replay-fuzz-cases:
+    needs: generate-fuzz-cases
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: llm-fuzz-cases
+          path: .
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: llm-fuzz/llm-fuzz-ci/actions/setup@v1
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install -U pip
+          python -m pip install -r requirements.txt
+          python -m pip install -e .
+
+      - name: Replay fuzz cases
+        id: replay
+        continue-on-error: true
+        env:
+          PYTHONPATH: src
+        run: |
+          llm-fuzz-ci replay \
+            --corpus-dir .llm-fuzz/cases \
+            --report .llm-fuzz/reports/replay-report.json \
+            --require-cases \
+            -- tests -q
+
+      - name: Render report
+        if: steps.replay.outcome == 'failure'
+        run: |
+          llm-fuzz-ci report \
+            --report .llm-fuzz/reports/replay-report.json \
+            --format markdown \
+            --show-failure-details \
+            --output .llm-fuzz/reports/replay-report.md
+
+      - name: Create GitHub issue
+        if: steps.replay.outcome == 'failure'
+        uses: actions/github-script@v9
+        env:
+          REPORT_PATH: .llm-fuzz/reports/replay-report.md
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync(process.env.REPORT_PATH, 'utf8');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'LLM Fuzz CI detected a vulnerability',
+              body
+            });
+
+      - name: Fail workflow
+        if: steps.replay.outcome == 'failure'
+        run: exit 1
