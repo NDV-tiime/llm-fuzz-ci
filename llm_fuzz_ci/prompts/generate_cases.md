@@ -11,24 +11,35 @@ calls. Work out where that code could mishandle what it is given: crashes,
 injection, authorisation or filter bypass, parsing ambiguity, path traversal,
 resource exhaustion, arithmetic errors, lost escaping.
 
-Then write one input for each weakness you found.
+Read the assertions in the marked test as well. They are the oracle: an input
+is only worth sending if it could make one of them fail.
+
+Then write the inputs that exercise what you found.
 
 How many to write:
-- One input per distinct weakness. Two inputs that probe the same weakness with
-  different values are one weakness, not two.
-- If you find nothing, return an empty cases list. That is a correct answer.
-- Never pad the list to look thorough. If you cannot name what an input probes
-  in one specific sentence, it does not belong.
-- A small set of sharp inputs is worth more than a long list of variations.
+- As many as the target warrants, and no more. There is no target number.
+- Several inputs for one weakness are right when each exercises it differently,
+  because defences are usually partial. A traversal defence may stop `../` and
+  miss `..%2f`; an allowlist may stop `evil.com` and miss `EVIL.COM`. Send each
+  variant that could plausibly get through where the others are stopped.
+- Two inputs that would always pass together and fail together are one input.
+  Keep the stronger and drop the other.
+- If nothing here can plausibly break an assertion, return an empty cases list.
+  That is a correct answer, and better than a list of inputs you expect to pass.
+- Do not pad. For every input you must be able to say, in one sentence, what it
+  probes and how it differs from the others you are sending.
 
 What to return:
 - Only JSON matching the provided schema.
 - Every case has input_json and rationale.
 - input_json is a JSON object encoded as a string.
-- rationale is one sentence naming the weakness that input probes. Not a
-  restatement of the input.
+- rationale is one sentence naming the weakness that input probes, and what
+  makes it different from your other inputs. Not a restatement of the input.
 {{INPUT_KEYS}}
 - Example input_json for an inferred ["x", "y"] shape: {{EXAMPLE_INPUT_JSON}}
+- Keep each value as short as it can be and still do its job. To probe a length
+  limit, exceed it by a little, not by megabytes: these inputs are saved and
+  shown to a human.
 
 Rules:
 - Analyse only this target and the code it reaches.
@@ -39,6 +50,9 @@ Rules:
 - Do not include secrets or environment variables in the output.
 - Do not make network requests unless one is needed to understand a dependency,
   framework, or vulnerability class.
+- Inputs are replayed later without you. Every value must be self-contained: no
+  placeholders to fill in, no reference to a file, a fixture, or a real
+  account.
 
 Where weaknesses usually are:
 - Webhook or signature validation: JSON whose raw bytes differ from compact

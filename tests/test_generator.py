@@ -44,7 +44,10 @@ def test_agent_prompt_is_rendered_from_template(tmp_path):
     assert "Every case has input_json and rationale." in prompt
     # quantity follows from what the agent finds, so no cap may leak back in
     assert "at most" not in prompt
-    assert "If you find nothing, return an empty cases list." in prompt
+    assert "return an empty cases list" in prompt
+    # several inputs may probe one weakness when each can fail where others pass
+    assert "Several inputs for one weakness are right" in prompt
+    assert "There is no target number." in prompt
 
 
 
