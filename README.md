@@ -54,53 +54,14 @@ jobs:
 
 Run it from the Actions tab.
 
-The action uses the environment your earlier steps built. If pytest can import
-your code in that job, so can the action.
+Everything happens in one job, so set the project up the way you would for any
+other test run: dependencies in steps before the action, databases and queues in
+`services`, configuration and credentials in the job's `env`. If pytest can
+import your code in that job, so can the action. The agent runs there too, so it
+sees whatever the job sees.
 
 An annotated copy of this workflow is in
 [`templates/llm-fuzz-ci.yml`](templates/llm-fuzz-ci.yml).
-
-### Projects that need more than `pip install`
-
-Everything happens in one job, so set it up the way you would for any other test
-run. Dependencies go in steps before the action. Databases and queues go in
-`services`. Configuration and credentials go in the job's `env`, where every
-step can see them.
-
-```yaml
-jobs:
-  llm-fuzz-ci:
-    runs-on: ubuntu-latest
-    env:
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/app
-      APP_SECRET: ${{ secrets.APP_SECRET }}
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports: ["5432:5432"]
-
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      - run: poetry install --no-interaction
-      - run: poetry run alembic upgrade head
-
-      - uses: NDV-tiime/llm-fuzz-ci@v1
-        with:
-          test-paths: tests
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-```
-
-A step can also export values with `echo "KEY=value" >> $GITHUB_ENV`, which
-later steps pick up.
-
-The agent runs in this job, so it can see everything the job can. Keep anything
-you would not show it out of this workflow.
 
 ## Configuration
 
