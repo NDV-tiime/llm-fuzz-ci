@@ -17,6 +17,7 @@ TARGETS = ".llm-fuzz/targets.json"
 CORPUS = ".llm-fuzz/cases"
 TEST_REPORT = ".llm-fuzz/reports/test-report.json"
 USAGE_REPORT = ".llm-fuzz/reports/llm-usage.json"
+BARREN_REPORT = ".llm-fuzz/reports/no-inputs.json"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -163,6 +164,10 @@ def cmd_generate(args: argparse.Namespace) -> int:
         print(path)
     for reason in result.skipped:
         print(f"Discarded an unparseable input: {reason}")
+    for target_id, reason in result.failures.items():
+        print(f"Generation failed for {target_id}: {reason}")
+
+    write_barren_report(BARREN_REPORT, targets, result)
     if args.show_usage:
         print(format_usage_summary(result.usage))
     if args.usage_report:
@@ -203,6 +208,7 @@ def cmd_summary(args: argparse.Namespace) -> int:
         cases=load_cases(args.corpus_dir),
         test_report=read_json(args.report),
         usage_report=read_json(args.usage_report),
+        barren=read_json(BARREN_REPORT) or None,
         fold=overview,
         max_bytes=SUMMARY_BYTES if overview else None,
     )
@@ -262,3 +268,21 @@ def read_json(path: str | Path) -> dict[str, Any] | None:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
+
+
+def write_barren_report(path: str, targets: list[Any], result: Any) -> None:
+    """Record why each target that produced no inputs produced none.
+
+    An empty corpus on its own cannot say whether the agent looked and found
+    nothing or never got an answer out of the model, and those need different
+    reactions from whoever reads the summary.
+    """
+    covered = {case.target_id for case in result.cases}
+    barren = {
+        target.id: result.failures.get(target.id, "searched")
+        for target in targets
+        if target.id not in covered
+    }
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(barren, indent=2), encoding="utf-8")

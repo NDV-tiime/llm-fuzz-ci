@@ -214,3 +214,35 @@ def test_ordinary_non_ascii_is_left_alone():
     out = render(cases=cases)
 
     assert "Confidentialité 日本語" in out
+
+
+def test_a_target_the_agent_found_nothing_in_still_appears():
+    case = make_case(target_id="t.py::a", input_value={"x": 1})
+    report = {"results": [{"case_id": case.id, "outcome": "passed"}], "exitstatus": 0}
+
+    out = render(cases=[case], test_report=report, barren={"t.py::b": "searched"})
+
+    assert "`b` | 0 | no weakness found" in out
+    assert "generation failed" not in out
+
+
+def test_a_target_whose_agent_run_died_is_not_mistaken_for_a_clean_one():
+    case = make_case(target_id="t.py::a", input_value={"x": 1})
+    report = {"results": [{"case_id": case.id, "outcome": "passed"}], "exitstatus": 0}
+
+    out = render(
+        cases=[case],
+        test_report=report,
+        barren={"t.py::b": "t.py::b: Codex generation failed\nexit code: 1"},
+    )
+
+    assert "**generation failed**" in out
+    assert "1 target(s) were never tested" in out
+    assert "exit code: 1" in out
+
+
+def test_a_run_where_every_target_failed_is_still_a_report():
+    out = render(cases=[], barren={"t.py::b": "t.py::b: boom"})
+
+    assert "No generated inputs were found." not in out
+    assert "**generation failed**" in out

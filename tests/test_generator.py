@@ -351,8 +351,9 @@ def test_one_failing_target_keeps_the_others(monkeypatch):
     )
 
     assert [case.target_id for case in result.cases] == ["first", "last"]
-    assert len(result.skipped) == 1
-    assert result.skipped[0].startswith("boom: ")
+    assert result.skipped == []
+    assert list(result.failures) == ["boom"]
+    assert "Codex generation failed" in result.failures["boom"]
 
 
 def declared(params):

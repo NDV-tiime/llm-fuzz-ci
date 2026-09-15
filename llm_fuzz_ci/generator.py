@@ -19,6 +19,7 @@ class Generated:
     cases: list[FuzzCase]
     usage: LLMUsage | None = None
     skipped: list[str] = field(default_factory=list)
+    failures: dict[str, str] = field(default_factory=dict)
 
 
 def generate_cases(
@@ -51,6 +52,7 @@ def generate_cases(
 
     cases: list[FuzzCase] = []
     skipped: list[str] = []
+    failures: dict[str, str] = {}
     usage: LLMUsage | None = None
     root = Path(repo_root)
 
@@ -78,13 +80,13 @@ def generate_cases(
         except (RuntimeError, ValueError, subprocess.TimeoutExpired) as exc:
             # Targets are independent. Losing one must not discard the inputs
             # already paid for, nor stop the targets after it.
-            skipped.append(f"{target.id}: {exc}")
+            failures[target.id] = str(exc)
             continue
         cases.extend(result.cases)
         skipped.extend(result.skipped)
         usage = merge_usage(usage, result.usage)
 
-    return Generated(cases, usage, skipped)
+    return Generated(cases, usage, skipped, failures)
 
 
 def build_prompt(target: FuzzTarget, repo_root: Path) -> str:

@@ -14,6 +14,8 @@ SUMMARY_BYTES = 900_000
 
 ARTIFACT_HINT = "Download the `llm-fuzz-ci-report` artifact for the full report."
 
+NOTHING_FOUND = "searched"
+
 OUTCOME_ORDER = ["passed", "failed", "invalid input", "skipped", "not tested"]
 
 
@@ -42,6 +44,7 @@ def render(
     cases: list[Any],
     test_report: dict[str, Any] | None = None,
     usage_report: dict[str, Any] | None = None,
+    barren: dict[str, str] | None = None,
     fold: bool = False,
     max_bytes: int | None = None,
 ) -> str:
@@ -52,15 +55,23 @@ def render(
     The downloadable artifact wants neither.
     """
     entries = merge(cases, test_report)
-    if not entries:
+    barren = barren or {}
+    if not entries and not barren:
         return "# LLM Fuzz CI\n\nNo generated inputs were found."
 
     budget = Budget(max_bytes)
     failures = [entry for entry in entries if entry["outcome"] == "failed"]
     lines = ["# LLM Fuzz CI", ""]
-    lines += target_table(entries)
+    lines += target_table(entries, barren)
     lines += run_facts(test_report, usage_report)
     lines += [verdict(entries, test_report), ""]
+    lost = [name for name, reason in barren.items() if reason != NOTHING_FOUND]
+    if lost:
+        lines += [
+            f"**{len(lost)} target(s) were never tested: generation failed.**",
+            "",
+        ]
+    lines += barren_section(barren)
     lines += failures_section(failures, budget)
     lines += inputs_section(by_target(entries), fold, budget)
     if fold:
@@ -135,13 +146,39 @@ def outcomes(entries: list[dict[str, Any]]) -> str:
     return " · ".join(listed + rest) or "—"
 
 
-def target_table(entries: list[dict[str, Any]]) -> list[str]:
+def target_table(
+    entries: list[dict[str, Any]],
+    barren: dict[str, str] | None = None,
+) -> list[str]:
     lines = ["| Test | Inputs | Outcome |", "| --- | --: | --- |"]
     lines += [
         f"| `{short_target(target_id)}` | {len(group)} | {outcomes(group)} |"
         for target_id, group in by_target(entries)
     ]
+    lines += [
+        f"| `{short_target(target_id)}` | 0 | "
+        + ("no weakness found" if reason == NOTHING_FOUND else "**generation failed**")
+        + " |"
+        for target_id, reason in (barren or {}).items()
+    ]
     return lines + [""]
+
+
+def barren_section(barren: dict[str, str]) -> list[str]:
+    """Spell out why a target contributed no inputs.
+
+    A target the agent searched and a target whose agent run died both end up
+    with an empty corpus. Left unsaid they look identical, and a transient API
+    error reads as a clean bill of health.
+    """
+    failed = {k: v for k, v in barren.items() if v != NOTHING_FOUND}
+    if not failed:
+        return []
+    lines = ["## Targets that generated nothing", ""]
+    for target_id, reason in failed.items():
+        lines += [f"**`{short_target(target_id)}`** — generation failed", ""]
+        lines += code_block(str(reason), "text")
+    return lines
 
 
 def run_facts(
