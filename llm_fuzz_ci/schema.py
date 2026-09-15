@@ -42,8 +42,7 @@ def stable_case_id(target_id: str, input_value: dict[str, Any]) -> str:
 class FuzzTarget:
     id: str
     target: str
-    budget_usd: float
-    max_cases: int = 8
+    budget_usd: float | None = None
     description: str | None = None
     language: str = "python"
     test_nodeid: str | None = None
@@ -54,8 +53,7 @@ class FuzzTarget:
         return cls(
             id=str(data.get("id") or data.get("name") or data["target"]),
             target=str(data["target"]),
-            budget_usd=_positive_float(data, "budget_usd"),
-            max_cases=int(data.get("max_cases", 8)),
+            budget_usd=positive_float(data, "budget_usd"),
             description=data.get("description"),
             language=str(data.get("language", "python")),
             test_nodeid=data.get("test_nodeid"),
@@ -66,9 +64,9 @@ class FuzzTarget:
         return asdict(self)
 
 
-def _positive_float(data: dict[str, Any], key: str) -> float:
-    if key not in data:
-        raise ValueError(f"Fuzz target requires {key!r}")
+def positive_float(data: dict[str, Any], key: str) -> float | None:
+    if data.get(key) is None:
+        return None
     try:
         value = float(data[key])
     except (TypeError, ValueError) as exc:
@@ -124,19 +122,19 @@ def parse_input_json(raw: str) -> dict[str, Any]:
     where that goes wrong. Repair the two malformations that actually show up,
     then give a message that names the offending text.
     """
-    text = _strip_code_fence(raw.strip())
-    for candidate in (text, _drop_trailing_commas(text)):
+    text = strip_code_fence(raw.strip())
+    for candidate in (text, drop_trailing_commas(text)):
         try:
             return json.loads(candidate)
         except json.JSONDecodeError as exc:
             last = exc
     raise ValueError(
         f"input_json is not valid JSON ({last.msg} at column {last.colno}): "
-        f"{_clip_for_error(text)}"
+        f"{clip_for_error(text)}"
     ) from last
 
 
-def _strip_code_fence(text: str) -> str:
+def strip_code_fence(text: str) -> str:
     if not text.startswith("```"):
         return text
     lines = text.splitlines()
@@ -147,11 +145,11 @@ def _strip_code_fence(text: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _drop_trailing_commas(text: str) -> str:
+def drop_trailing_commas(text: str) -> str:
     return re.sub(r",(\s*[}\]])", r"\1", text)
 
 
-def _clip_for_error(text: str, limit: int = 300) -> str:
+def clip_for_error(text: str, limit: int = 300) -> str:
     return text if len(text) <= limit else text[:limit] + "... (truncated)"
 
 
@@ -232,16 +230,16 @@ def write_cases(
         merged: dict[str, FuzzCase] = {}
         if merge:
             for existing in load_cases(root, target_id):
-                merged[_case_dedupe_key(existing)] = existing
+                merged[dedupe_key(existing)] = existing
         for case in new_cases:
-            merged[_case_dedupe_key(case)] = case
+            merged[dedupe_key(case)] = case
         serialized = "\n".join(json.dumps(case.to_dict()) for case in merged.values())
         path.write_text(serialized + ("\n" if serialized else ""), encoding="utf-8")
         written.append(path)
     return written
 
 
-def _case_dedupe_key(case: FuzzCase) -> str:
+def dedupe_key(case: FuzzCase) -> str:
     return stable_case_id(case.target_id, case.input)
 
 

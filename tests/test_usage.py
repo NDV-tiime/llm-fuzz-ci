@@ -80,3 +80,44 @@ def test_usage_summary_and_report_are_token_only(tmp_path):
     assert "usage" in payload
     assert payload["provider"] == "openai"
     assert "cost" not in json.dumps(payload).lower()
+
+
+def test_a_nested_copy_of_the_same_usage_is_not_counted_twice():
+    """Claude repeats the run's usage under modelUsage; adding both doubles it."""
+    reply = json.dumps(
+        {
+            "type": "result",
+            "usage": {"input_tokens": 100, "output_tokens": 50},
+            "modelUsage": {"claude-sonnet-5": {"usage": {"input_tokens": 100, "output_tokens": 50}}},
+        }
+    )
+
+    usage = extract_usage_from_json_events(reply, provider="anthropic", model="sonnet")
+
+    assert (usage.input_tokens, usage.output_tokens) == (100, 50)
+    assert usage.total_tokens == 150
+
+
+def test_a_running_total_wins_over_the_per_turn_figures():
+    """Codex streams total_token_usage cumulatively; the last one is the run."""
+    stream = "\n".join(
+        json.dumps({"type": "token_count", "info": {
+            "last_token_usage": {"input_tokens": step, "output_tokens": 1},
+            "total_token_usage": {"input_tokens": total, "output_tokens": out},
+        }})
+        for step, total, out in [(10, 10, 1), (20, 30, 2), (5, 35, 3)]
+    )
+
+    usage = extract_usage_from_json_events(stream, provider="openai", model="gpt-5.6-terra")
+
+    assert (usage.input_tokens, usage.output_tokens) == (35, 3)
+
+
+def test_per_event_usage_without_a_running_total_is_summed():
+    stream = "\n".join(
+        json.dumps({"usage": {"input_tokens": n, "output_tokens": 1}}) for n in (10, 20)
+    )
+
+    usage = extract_usage_from_json_events(stream, provider="openai", model=None)
+
+    assert (usage.input_tokens, usage.output_tokens) == (30, 2)

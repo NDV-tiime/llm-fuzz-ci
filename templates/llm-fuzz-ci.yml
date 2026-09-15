@@ -1,0 +1,62 @@
+# Copy to .github/workflows/llm-fuzz-ci.yml and edit the two lines marked
+# EDIT ME. Everything else has a working default.
+#
+# Then add your provider key under
+# Settings > Secrets and variables > Actions > New repository secret.
+
+name: LLM Fuzz CI
+
+on:
+  # Run it by hand from the Actions tab while you are setting it up.
+  workflow_dispatch:
+
+  # Once it works, uncomment one of these.
+  # schedule:
+  #   - cron: "17 2 * * *"   # nightly at 02:17 UTC
+  # pull_request:
+
+jobs:
+  llm-fuzz-ci:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # only needed when create-issue is true
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: NDV-tiime/llm-fuzz-ci@v1
+        with:
+          # EDIT ME — where your @pytest.mark.llm_fuzz tests live.
+          test-paths: tests
+
+          # EDIT ME — how to install your project so pytest can import it.
+          #   python -m pip install -r requirements.txt
+          #   poetry install --no-interaction
+          #   uv sync --all-extras
+          setup-command: python -m pip install -e .
+
+          # Only if your code is importable from a directory rather than installed.
+          # pythonpath: src
+
+          # codex (default) or claude. Leave model unset for the agent default.
+          agent: codex
+          # model: gpt-5.6-terra
+
+          # Match the key to the agent:
+          #   codex  -> openai-api-key, or openrouter-api-key with provider: openrouter
+          #   claude -> anthropic-api-key
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+
+          # Open an issue when a generated input fails a marked test.
+          create-issue: true
+
+          # Set to false to report failures without failing the workflow.
+          hard-fail: true
+
+# Tests that need application secrets? Use the reusable workflow instead, which
+# keeps the agent in a separate job. Service containers or a monorepo
+# subdirectory? Use the three actions in your own jobs. Both are in the README.

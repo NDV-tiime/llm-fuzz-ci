@@ -1,0 +1,86 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - run: python -m pip install -e . pytest pyyaml
+
+      - run: python -m pytest tests -q
+
+      - name: Smoke-test the installed entry point
+        run: |
+          set -euo pipefail
+          mkdir -p work/tests && cd work
+          export PYTHONPATH=.   # what the pythonpath input does
+          printf 'def divide(x, y):\n    return x / y\n' > app.py
+          cat > tests/test_divide.py <<'PY'
+          import pytest
+          from app import divide
+
+          @pytest.mark.llm_fuzz(budget_usd=0.05)
+          def test_divide(llm_fuzz_case):
+              """Division must not leak a raw ZeroDivisionError."""
+              try:
+                  result = divide(**llm_fuzz_case.input)
+              except ZeroDivisionError:
+                  pytest.fail("divide should handle y=0")
+              assert result is None or isinstance(result, (int, float))
+          PY
+          llm-fuzz-ci collect tests
+          grep -q "tests/test_divide.py::test_divide" .llm-fuzz/targets.json
+          mkdir -p .llm-fuzz/cases
+          printf '{"target_id": "tests/test_divide.py::test_divide", "input": {"x": 1, "y": 0}, "rationale": "Zero divisor."}\n' \
+            > ".llm-fuzz/cases/tests-test_divide.py-test_divide.jsonl"
+          llm-fuzz-ci test-fuzz-cases --require-cases -- tests -q || true
+          llm-fuzz-ci summary --output report.md
+          grep -q "1 of 1 tested inputs failed" report.md
+
+      - name: The example in examples/divide behaves as documented
+        run: |
+          set -euo pipefail
+          llm-fuzz-ci test-fuzz-cases \
+            --corpus-dir examples/divide/.llm-fuzz/cases \
+            --report /tmp/test-report.json \
+            --require-cases -- examples/divide -q || true
+          llm-fuzz-ci summary \
+            --corpus-dir examples/divide/.llm-fuzz/cases \
+            --report /tmp/test-report.json \
+            --output /tmp/report.md
+          grep -q "1 of 2 tested inputs failed" /tmp/report.md
+
+      - name: Collecting nothing is an error, not a green run
+        run: |
+          set -euo pipefail
+          mkdir -p empty/tests && cd empty
+          echo "def test_plain(): assert True" > tests/test_plain.py
+          if llm-fuzz-ci collect tests; then
+            echo "collect should have failed with no marked tests"; exit 1
+          fi
+
+      - name: Check every workflow and action parses
+        run: |
+          python - <<'PY'
+          import pathlib, re, yaml
+          for path in list(pathlib.Path(".").rglob("*.yml")) + list(pathlib.Path(".").rglob("action.yml")):
+              yaml.safe_load(path.read_text())
+          for doc in pathlib.Path("templates").glob("*.md"):
+              for block in re.findall(r"```yaml\n(.*?)```", doc.read_text(), re.S):
+                  yaml.safe_load(block)
+          print("ok")
+          PY

@@ -2,143 +2,157 @@ import json
 from argparse import Namespace
 
 from llm_fuzz_ci import cli
-from llm_fuzz_ci.generator import GenerationResult
+from llm_fuzz_ci.generator import Generated
 from llm_fuzz_ci.schema import FuzzTarget, load_cases, make_case, write_cases, write_targets
 
 
-def _generate_args(tmp_path):
-    return Namespace(
+def generate_args(tmp_path, **overrides):
+    args = dict(
         agent="codex",
         model=None,
         provider=None,
-        max_cases=None,
         max_turns=None,
         max_budget_usd=None,
         timeout_seconds=600,
         show_usage=False,
         usage_report=None,
+        dry_run=False,
         corpus_dir=tmp_path / "cases",
         targets=tmp_path / "targets.json",
     )
+    return Namespace(**{**args, **overrides})
 
 
-def test_generate_replaces_stale_cases_by_default(tmp_path, monkeypatch):
+def summary_args(tmp_path, **overrides):
+    args = dict(
+        format="full",
+        corpus_dir=tmp_path / "cases",
+        report=tmp_path / "test-report.json",
+        usage_report=tmp_path / "llm-usage.json",
+        output=tmp_path / "reports" / "llm-fuzz-ci-report.md",
+    )
+    return Namespace(**{**args, **overrides})
+
+
+def test_generate_replaces_stale_inputs(tmp_path, monkeypatch, capsys):
     write_targets(
         tmp_path / "targets.json",
-        [
-            FuzzTarget(
-                id="divide",
-                target="pytest::tests/test_app.py::test_divide",
-                budget_usd=0.25,
-            )
-        ],
+        [FuzzTarget(id="divide", target="pytest::tests/test_app.py::test_divide", budget_usd=0.25)],
     )
-    stale = make_case(
-        target_id="divide",
-        input_value={"x": 1, "y": 0},
-        rationale="old",
-    )
-    write_cases(tmp_path / "cases", [stale], merge=False)
-
+    write_cases(tmp_path / "cases", [make_case(target_id="divide", input_value={"x": 1, "y": 0})])
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "generate_cases_with_usage", lambda *args, **kwargs: GenerationResult([]))
+    monkeypatch.setattr(cli, "generate_cases", lambda *a, **k: Generated([]))
 
-    assert cli.cmd_generate(_generate_args(tmp_path)) == 0
-
+    assert cli.cmd_generate(generate_args(tmp_path)) == 0
     assert load_cases(tmp_path / "cases", "divide") == []
 
 
-def test_cases_command_renders_generated_inputs(tmp_path, capsys):
-    write_cases(
-        tmp_path / "cases",
-        [
-            make_case(
-                target_id="divide",
-                input_value={"x": 1, "y": 0},
-                rationale="Checks division by zero.",
-            )
-        ],
-        merge=False,
+def test_generate_reports_inputs_it_could_not_parse(tmp_path, monkeypatch, capsys):
+    write_targets(
+        tmp_path / "targets.json",
+        [FuzzTarget(id="divide", target="pytest::tests/test_app.py::test_divide", budget_usd=0.25)],
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "generate_cases",
+        lambda *a, **k: Generated(
+            [make_case(target_id="divide", input_value={"x": 1})],
+            skipped=["divide input 2: not valid JSON"],
+        ),
     )
 
-    args = Namespace(
-        corpus_dir=tmp_path / "cases",
-        format="markdown",
-        output=None,
-        max_cases=100,
-    )
-
-    assert cli.cmd_cases(args) == 0
-
-    rendered = capsys.readouterr().out
-    assert "# LLM Fuzz CI Generated Inputs" in rendered
-    assert "`x`: `1`" in rendered
-    assert "Checks division by zero." in rendered
+    assert cli.cmd_generate(generate_args(tmp_path)) == 0
+    assert "Discarded an unparseable input: divide input 2" in capsys.readouterr().out
 
 
-def test_summary_command_writes_one_combined_markdown_report(tmp_path, capsys):
-    case = make_case(
-        target_id="divide",
-        input_value={"x": 1, "y": 0},
-        rationale="Checks division by zero.",
-    )
-    write_cases(tmp_path / "cases", [case], merge=False)
+def test_summary_writes_the_full_report(tmp_path, capsys):
+    item = make_case(target_id="divide", input_value={"x": 1, "y": 0}, rationale="Zero divisor.")
+    write_cases(tmp_path / "cases", [item])
     (tmp_path / "test-report.json").write_text(
         json.dumps(
             {
-                "generated_at": "2026-09-11T13:54:35Z",
+                "generated_at": "2026-09-15T09:00:00Z",
                 "exitstatus": 1,
-                "summary": {"executed_cases": 1, "passed_cases": 0, "failed_cases": 1},
                 "results": [
                     {
-                        "case_id": case.id,
+                        "case_id": item.id,
                         "target_id": "divide",
                         "nodeid": "tests/test_app.py::test_divide[zero]",
                         "outcome": "failed",
-                        "input": {"x": 1, "y": 0},
-                        "rationale": "Checks division by zero.",
-                        "failure": "E   AssertionError: divide should guard y=0",
+                        "input": item.input,
+                        "rationale": item.rationale,
+                        "failure": "E   AssertionError: guard y=0",
                     }
                 ],
             }
         ),
         encoding="utf-8",
     )
-    output = tmp_path / "reports" / "llm-fuzz-ci-report.md"
-    args = Namespace(
-        format="full",
-        corpus_dir=tmp_path / "cases",
-        report=tmp_path / "test-report.json",
-        usage_report=tmp_path / "missing-usage.json",
-        output=output,
-        max_cases=100,
-    )
+    args = summary_args(tmp_path)
 
     assert cli.cmd_summary(args) == 0
 
-    rendered = output.read_text(encoding="utf-8")
-    assert rendered.startswith("# LLM Fuzz CI Report")
-    assert "**1 generated input(s) failed a marked test.**" in rendered
-    assert "divide should guard y=0" in rendered
-    assert "## Token Usage" not in rendered
-    assert str(output) in capsys.readouterr().out
+    written = args.output.read_text(encoding="utf-8")
+    assert written.startswith("# LLM Fuzz CI")
+    assert "**1 of 1 tested inputs failed.**" in written
+    assert "guard y=0" in written
+    assert "<details>" not in written  # the artifact never folds
+    assert str(args.output) in capsys.readouterr().out
 
 
-def test_summary_command_runs_without_a_test_report(tmp_path):
+def test_summary_overview_folds_and_points_at_the_artifact(tmp_path):
+    write_cases(tmp_path / "cases", [make_case(target_id="divide", input_value={"x": 1})])
+    args = summary_args(tmp_path, format="overview")
+
+    assert cli.cmd_summary(args) == 0
+
+    written = args.output.read_text(encoding="utf-8")
+    assert "<details>" in written
+    assert "llm-fuzz-ci-report" in written
+
+
+def test_summary_runs_before_any_test_report_exists(tmp_path):
+    write_cases(tmp_path / "cases", [make_case(target_id="divide", input_value={"x": 1})])
+    args = summary_args(tmp_path)
+
+    assert cli.cmd_summary(args) == 0
+    assert "No test results yet." in args.output.read_text(encoding="utf-8")
+
+
+def test_the_cli_exposes_only_the_commands_ci_uses():
+    import argparse
+
+    parser = cli.build_parser()
+    commands = next(
+        action for action in parser._actions if isinstance(action, argparse._SubParsersAction)
+    )
+
+    assert set(commands.choices) == {"collect", "generate", "test-fuzz-cases", "summary"}
+
+
+def test_generate_drops_inputs_for_a_test_that_was_renamed(tmp_path, monkeypatch, capsys):
+    """A renamed test would otherwise leave inputs that read as `not tested` forever."""
+    write_targets(
+        tmp_path / "targets.json",
+        [FuzzTarget(id="divide_v2", target="pytest::tests/test_app.py::test_divide_v2")],
+    )
     write_cases(
         tmp_path / "cases",
-        [make_case(target_id="divide", input_value={"x": 1, "y": 0})],
-        merge=False,
+        [
+            make_case(target_id="divide_v1", input_value={"x": 1}),
+            make_case(target_id="divide_v2", input_value={"x": 2}),
+        ],
     )
-    output = tmp_path / "reports" / "llm-fuzz-ci-report.md"
-    args = Namespace(
-        format="full",
-        corpus_dir=tmp_path / "cases",
-        report=tmp_path / "missing-report.json",
-        usage_report=tmp_path / "missing-usage.json",
-        output=output,
-        max_cases=100,
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "generate_cases",
+        lambda *a, **k: Generated([make_case(target_id="divide_v2", input_value={"x": 3})]),
     )
 
-    assert cli.cmd_summary(args) == 0
-    assert "No test results were recorded." in output.read_text(encoding="utf-8")
+    assert cli.cmd_generate(generate_args(tmp_path)) == 0
+
+    assert load_cases(tmp_path / "cases", "divide_v1") == []
+    assert [c.input for c in load_cases(tmp_path / "cases", "divide_v2")] == [{"x": 3}]
+    assert "no longer exists: divide_v1.jsonl" in capsys.readouterr().out

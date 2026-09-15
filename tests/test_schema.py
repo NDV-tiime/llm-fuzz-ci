@@ -35,9 +35,16 @@ def test_targets_round_trip(tmp_path):
     assert targets[0].budget_usd == 0.25
 
 
-def test_targets_require_budget():
-    with pytest.raises(ValueError, match="budget_usd"):
-        FuzzTarget.from_dict({"id": "divide", "target": "app:divide"})
+def test_targets_may_omit_the_budget():
+    target = FuzzTarget.from_dict({"id": "divide", "target": "app:divide"})
+
+    assert target.budget_usd is None
+
+
+def test_a_budget_must_be_positive_when_given():
+    with pytest.raises(ValueError, match="greater than 0"):
+        FuzzTarget.from_dict({"id": "divide", "target": "app:divide", "budget_usd": 0})
+
 
 
 def test_cases_round_trip(tmp_path):

@@ -1,0 +1,2 @@
+{"target_id": "examples/divide/test_divide_fuzz.py::test_divide_handles_adversarial_inputs", "input": {"x": 1, "y": 0}, "rationale": "A zero divisor is the obvious unguarded path."}
+{"target_id": "examples/divide/test_divide_fuzz.py::test_divide_handles_adversarial_inputs", "input": {"x": 4, "y": 2}, "rationale": "A plain division, to show a passing input."}

@@ -2,22 +2,21 @@ You are generating saved fuzz cases for LLM Fuzz CI.
 
 Repository root: {{REPO_ROOT}}
 
-Targets:
-{{TARGETS_JSON}}
+Target:
+{{TARGET_JSON}}
 
 Rules:
-- Analyze only the listed targets and their reachable helpers.
+- Analyze only the target above and the code it reaches.
 - Produce adversarial inputs, not executable test code or assertions.
 - Return only JSON that matches the provided schema.
 - Every case must include input_json and rationale.
 - Every case.input_json value must be a valid JSON object encoded as a string.
 - rationale is one sentence saying what weakness the input probes.
-- Every target includes budget_usd. Generate the best cases you can for that target within that budget.
 - Infer the input_json keys from the marked pytest harness, especially llm_fuzz_case.input access patterns and calls made by the test.
 - Example input_json for an inferred ["x", "y"] shape: {{EXAMPLE_INPUT_JSON}}
-- Generate at most target.max_cases cases per target.
+- Generate at most {{MAX_CASES}} cases.
 - Prefer cases that can expose crashes, injection, auth bypass, parsing ambiguity, path traversal, resource exhaustion, or arithmetic errors.
-- You may inspect source files and run lightweight read-only inspection commands when the agent runtime allows it.
+- Inspect the repository however you need to understand the target.
 - Do not describe pass/fail assertions. The developer's pytest/Vitest harness owns those invariants.
 - Do not edit files.
 - Do not run the project's test suite.
@@ -25,8 +24,8 @@ Rules:
 - Do not include secrets or environment variables in the output.
 
 Input guidance:
-- Use each target's id, source code, and description to infer the relevant attack families.
-- When target.target starts with `pytest::`, treat the marked pytest test as the target harness and analyze the application code it calls.
+- Use the target's id, source code, and description to infer the relevant attack families.
+- The target is a marked pytest test. Analyze the application code it calls.
 - For webhook or signature validation, include valid JSON objects whose raw bytes differ from compact sorted JSON, such as whitespace, reordered keys, unicode escapes, or duplicate keys.
 - For LLM/prompt boundaries, include messages that close XML/JSON/Markdown prompt delimiters and introduce system, developer, or tool sections.
 - For path handling, include parent-directory, absolute-path, encoded traversal, and sibling-directory prefix variants.

@@ -4,13 +4,13 @@ import subprocess
 import pytest
 
 from llm_fuzz_ci import generator
-from llm_fuzz_ci.generator import generate_cases_with_usage
-from llm_fuzz_ci.schema import FuzzTarget
+from llm_fuzz_ci.generator import generate_cases
+from llm_fuzz_ci.schema import FuzzTarget, make_case
 from llm_fuzz_ci.usage import LLMUsage
 
 
 def test_parse_agent_cases_accepts_structured_output():
-    cases, skipped = generator._parse_agent_cases(
+    cases, skipped = generator.parse_agent_cases(
         """
         {
           "cases": [
@@ -32,14 +32,8 @@ def test_parse_agent_cases_accepts_structured_output():
 
 
 def test_agent_prompt_is_rendered_from_template(tmp_path):
-    prompt = generator._build_agent_prompt(
-        [
-            FuzzTarget(
-                id="divide",
-                target="pytest::tests/test_app.py::test_divide",
-                budget_usd=0.25,
-            )
-        ],
+    prompt = generator.build_prompt(
+        FuzzTarget(id="divide", target="pytest::tests/test_app.py::test_divide", budget_usd=0.25),
         tmp_path,
     )
 
@@ -50,50 +44,20 @@ def test_agent_prompt_is_rendered_from_template(tmp_path):
     assert "Every case must include input_json and rationale." in prompt
 
 
-def test_global_max_cases_overrides_agent_targets(monkeypatch):
-    captured = {}
-
-    def fake_codex(targets, repo_root, *, model, provider, timeout_seconds, capture_usage):
-        captured["max_cases"] = [target.max_cases for target in targets]
-        captured["provider"] = provider
-        return generator.GenerationResult([])
-
-    monkeypatch.setattr(generator, "_generate_with_codex", fake_codex)
-
-    generate_cases_with_usage(
-        [FuzzTarget(id="divide", target="app:divide", budget_usd=0.25, max_cases=9)],
-        agent="codex",
-        repo_root=".",
-        max_cases=2,
-    )
-
-    assert captured["max_cases"] == [2]
-    assert captured["provider"] is None
-
 
 def test_claude_generation_uses_required_target_budget_per_target(monkeypatch):
     captured = []
 
-    def fake_claude(
-        targets,
-        repo_root,
-        *,
-        model,
-        max_turns,
-        max_budget_usd,
-        timeout_seconds,
-        capture_usage,
-    ):
-        target = targets[0]
-        captured.append((target.id, target.budget_usd, max_budget_usd))
-        return generator.GenerationResult(
+    def fake_claude(target, repo_root, *, model, max_turns, timeout_seconds, capture_usage):
+        captured.append((target.id, target.budget_usd))
+        return generator.Generated(
             [],
             LLMUsage(provider="anthropic", input_tokens=10, output_tokens=5, total_tokens=15),
         )
 
-    monkeypatch.setattr(generator, "_generate_with_claude", fake_claude)
+    monkeypatch.setattr(generator, "generate_with_claude", fake_claude)
 
-    result = generate_cases_with_usage(
+    result = generate_cases(
         [
             FuzzTarget(id="checkout", target="app:checkout", budget_usd=0.25),
             FuzzTarget(id="redirect", target="app:redirect", budget_usd=0.10),
@@ -103,10 +67,7 @@ def test_claude_generation_uses_required_target_budget_per_target(monkeypatch):
         capture_usage=True,
     )
 
-    assert captured == [
-        ("checkout", 0.25, 0.25),
-        ("redirect", 0.10, 0.10),
-    ]
+    assert captured == [("checkout", 0.25), ("redirect", 0.10)]
     assert result.usage is not None
     assert result.usage.total_tokens == 30
 
@@ -114,23 +75,13 @@ def test_claude_generation_uses_required_target_budget_per_target(monkeypatch):
 def test_global_max_budget_overrides_marker_budget_per_target(monkeypatch):
     captured = []
 
-    def fake_claude(
-        targets,
-        repo_root,
-        *,
-        model,
-        max_turns,
-        max_budget_usd,
-        timeout_seconds,
-        capture_usage,
-    ):
-        target = targets[0]
-        captured.append((target.id, target.budget_usd, max_budget_usd))
-        return generator.GenerationResult([])
+    def fake_claude(target, repo_root, *, model, max_turns, timeout_seconds, capture_usage):
+        captured.append((target.id, target.budget_usd))
+        return generator.Generated([])
 
-    monkeypatch.setattr(generator, "_generate_with_claude", fake_claude)
+    monkeypatch.setattr(generator, "generate_with_claude", fake_claude)
 
-    generate_cases_with_usage(
+    generate_cases(
         [
             FuzzTarget(id="checkout", target="app:checkout", budget_usd=0.25),
             FuzzTarget(id="redirect", target="app:redirect", budget_usd=0.10),
@@ -140,10 +91,7 @@ def test_global_max_budget_overrides_marker_budget_per_target(monkeypatch):
         max_budget_usd=0.50,
     )
 
-    assert captured == [
-        ("checkout", 0.50, 0.50),
-        ("redirect", 0.50, 0.50),
-    ]
+    assert captured == [("checkout", 0.50), ("redirect", 0.50)]
 
 
 def test_codex_preflight_rejects_old_cli(monkeypatch):
@@ -160,7 +108,7 @@ def test_codex_preflight_rejects_old_cli(monkeypatch):
     monkeypatch.setattr(generator.subprocess, "run", fake_run)
 
     with pytest.raises(RuntimeError, match="does not support the non-interactive command"):
-        generator._ensure_codex_exec_available()
+        generator.require_codex()
 
 
 def test_codex_command_uses_config_approval_when_flag_is_absent(tmp_path):
@@ -173,7 +121,7 @@ def test_codex_command_uses_config_approval_when_flag_is_absent(tmp_path):
           --json
     """
 
-    cmd = generator._build_codex_exec_command(
+    cmd = generator.codex_command(
         help_text=help_text,
         schema_path=tmp_path / "schema.json",
         output_path=tmp_path / "output.json",
@@ -203,7 +151,7 @@ def test_codex_command_keeps_ask_for_approval_when_flag_exists(tmp_path):
       --output-last-message <FILE>
     """
 
-    cmd = generator._build_codex_exec_command(
+    cmd = generator.codex_command(
         help_text=help_text,
         schema_path=tmp_path / "schema.json",
         output_path=tmp_path / "output.json",
@@ -218,24 +166,15 @@ def test_codex_command_keeps_ask_for_approval_when_flag_exists(tmp_path):
     assert "--json" not in cmd
 
 
-def test_claude_command_allows_inspection_without_web_or_edit_tools():
-    cmd = generator._build_claude_command(
-        prompt="Generate cases",
-        model="sonnet",
-        max_turns=4,
-        max_budget_usd=0.5,
+def test_claude_command_leaves_the_agent_unrestricted():
+    cmd = generator.claude_command(
+        prompt="p", model="sonnet", max_turns=None, max_budget_usd=None
     )
 
-    assert "Read,Grep,Glob,Bash" in cmd
-    assert "--allowed-tools" in cmd
-    assert "Bash(git diff *)" in cmd
-    assert "WebSearch" not in cmd
-    assert "WebFetch" not in cmd
-    assert "Edit" not in cmd
-    assert "Write" not in cmd
-    assert cmd[cmd.index("--model") + 1] == "sonnet"
-    assert cmd[cmd.index("--max-turns") + 1] == "4"
-    assert cmd[cmd.index("--max-budget-usd") + 1] == "0.5"
+    assert "--tools" not in cmd
+    assert "--allowed-tools" not in cmd
+    assert cmd[cmd.index("--permission-mode") + 1] == "bypassPermissions"
+
 
 
 def test_codex_command_can_select_openrouter_provider(tmp_path):
@@ -247,7 +186,7 @@ def test_codex_command_can_select_openrouter_provider(tmp_path):
       --output-last-message <FILE>
     """
 
-    cmd = generator._build_codex_exec_command(
+    cmd = generator.codex_command(
         help_text=help_text,
         schema_path=tmp_path / "schema.json",
         output_path=tmp_path / "output.json",
@@ -271,7 +210,7 @@ def test_codex_openrouter_shortcut_is_case_insensitive(tmp_path):
       --output-last-message <FILE>
     """
 
-    cmd = generator._build_codex_exec_command(
+    cmd = generator.codex_command(
         help_text=help_text,
         schema_path=tmp_path / "schema.json",
         output_path=tmp_path / "output.json",
@@ -285,7 +224,7 @@ def test_codex_openrouter_shortcut_is_case_insensitive(tmp_path):
 
 def test_non_codex_provider_is_rejected():
     with pytest.raises(ValueError, match="applies only to --agent codex"):
-        generate_cases_with_usage(
+        generate_cases(
             [FuzzTarget(id="divide", target="app:divide", budget_usd=0.25)],
             agent="claude",
             repo_root=".",
@@ -297,7 +236,7 @@ def test_openrouter_provider_requires_key(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
     with pytest.raises(RuntimeError, match="OPENROUTER_API_KEY"):
-        generator._codex_env("openrouter")
+        generator.codex_env("openrouter")
 
 
 def test_process_failure_summarizes_billing_error_and_redacts_key():
@@ -313,12 +252,12 @@ def test_process_failure_summarizes_billing_error_and_redacts_key():
         ),
     )
 
-    message = generator._format_process_failure("Codex", ["codex", "exec"], completed)
+    message = generator.describe_failure("Codex", ["codex", "exec"], completed)
 
     assert "likely cause:" in message
     assert "no remaining credits" in message
     assert "sk-proj-secret" not in message
-    assert "sk-redacted" in message
+    assert "<redacted>" in message
     assert "very long prompt body" not in message
 
 
@@ -334,10 +273,10 @@ def test_process_failure_explains_a_workspaceless_api_key():
         stderr="",
     )
 
-    message = generator._format_process_failure("Claude", ["claude"], completed)
+    message = generator.describe_failure("Claude", ["claude"], completed)
 
     assert "likely cause:" in message
-    assert "anthropic-workspace-id input" in message
+    assert "key created inside a workspace" in message
 
 
 def test_process_failure_explains_a_provider_policy_refusal():
@@ -351,14 +290,14 @@ def test_process_failure_explains_a_provider_policy_refusal():
         stderr="",
     )
 
-    message = generator._format_process_failure("Codex", ["codex"], completed)
+    message = generator.describe_failure("Codex", ["codex"], completed)
 
     assert "refused the request under its cybersecurity" in message
     assert "--agent claude" in message
 
 
 def test_one_unparseable_case_does_not_discard_the_others():
-    cases, skipped = generator._parse_agent_cases(
+    cases, skipped = generator.parse_agent_cases(
         json.dumps(
             {
                 "cases": [
@@ -379,7 +318,31 @@ def test_one_unparseable_case_does_not_discard_the_others():
 
 def test_an_entirely_unparseable_reply_still_fails_loudly():
     with pytest.raises(ValueError, match="No usable cases"):
-        generator._parse_agent_cases(
+        generator.parse_agent_cases(
             json.dumps({"cases": [{"input_json": "{'a': 1}", "rationale": "bad"}]}),
             "tests/test_app.py::test_x",
         )
+
+
+def test_one_failing_target_keeps_the_others(monkeypatch):
+    """Targets are independent, and generation costs money before it fails."""
+    def flaky(target, repo_root, **kwargs):
+        if target.id == "boom":
+            raise RuntimeError("Codex generation failed\nexit code: 1")
+        return generator.Generated([make_case(target_id=target.id, input_value={"x": 1})])
+
+    monkeypatch.setattr(generator, "generate_with_codex", flaky)
+
+    result = generate_cases(
+        [
+            FuzzTarget(id="first", target="app:a", budget_usd=0.1),
+            FuzzTarget(id="boom", target="app:b", budget_usd=0.1),
+            FuzzTarget(id="last", target="app:c", budget_usd=0.1),
+        ],
+        agent="codex",
+        repo_root=".",
+    )
+
+    assert [case.target_id for case in result.cases] == ["first", "last"]
+    assert len(result.skipped) == 1
+    assert result.skipped[0].startswith("boom: ")

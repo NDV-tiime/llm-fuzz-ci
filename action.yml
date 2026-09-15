@@ -1,11 +1,98 @@
 name: LLM Fuzz CI
-description: Safety guard for the root action entrypoint.
+description: A coding agent writes adversarial inputs; your pytest assertions judge them.
+author: NDV-tiime
+
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  test-paths:
+    description: Space-separated pytest paths holding your marked tests.
+    required: false
+    default: tests
+  setup-command:
+    description: Shell command that installs your project so pytest can import it.
+    required: false
+    default: ""
+  pythonpath:
+    description: Extra PYTHONPATH, for code importable from a directory.
+    required: false
+    default: ""
+  agent:
+    description: "Generator to use: codex or claude."
+    required: false
+    default: codex
+  model:
+    description: Model for the selected agent. Empty uses the agent's default.
+    required: false
+    default: ""
+  provider:
+    description: Codex model provider id. Use openrouter for the built-in shortcut.
+    required: false
+    default: ""
+  openai-api-key:
+    description: OpenAI API key, for agent codex.
+    required: false
+    default: ""
+  openrouter-api-key:
+    description: OpenRouter API key, for provider openrouter.
+    required: false
+    default: ""
+  anthropic-api-key:
+    description: Anthropic API key, for agent claude.
+    required: false
+    default: ""
+  create-issue:
+    description: Open a GitHub issue when a generated input fails.
+    required: false
+    default: "false"
+  github-token:
+    description: Token used to open the issue. Needs issues:write.
+    required: false
+    default: ${{ github.token }}
+  hard-fail:
+    description: Fail the job when a generated input fails.
+    required: false
+    default: "true"
+
+outputs:
+  failed-inputs:
+    description: How many generated inputs failed their marked test.
+    value: ${{ steps.report.outputs.failed-inputs }}
 
 runs:
   using: composite
   steps:
-    - name: Use the isolated reusable workflow
+    - uses: NDV-tiime/llm-fuzz-ci/actions/generate@v1
+      with:
+        test-paths: ${{ inputs.test-paths }}
+        setup-command: ${{ inputs.setup-command }}
+        pythonpath: ${{ inputs.pythonpath }}
+        agent: ${{ inputs.agent }}
+        model: ${{ inputs.model }}
+        provider: ${{ inputs.provider }}
+        openai-api-key: ${{ inputs.openai-api-key }}
+        openrouter-api-key: ${{ inputs.openrouter-api-key }}
+        anthropic-api-key: ${{ inputs.anthropic-api-key }}
+        show-usage: "true"
+
+    - name: Run the generated inputs
       shell: bash
+      continue-on-error: true
+      env:
+        LLM_FUZZ_PYTHONPATH: ${{ inputs.pythonpath }}
       run: |
-        echo "::error::The root composite action is intentionally disabled because composite action steps run inside the caller job. Use llm-fuzz/llm-fuzz-ci/.github/workflows/llm-fuzz-ci.yml@v1 for isolated generation and replay, or llm-fuzz/llm-fuzz-ci/actions/generate@v1 for generation only."
-        exit 1
+        set -euo pipefail
+        if [ -n "$LLM_FUZZ_PYTHONPATH" ]; then
+          export PYTHONPATH="$LLM_FUZZ_PYTHONPATH${PYTHONPATH:+:$PYTHONPATH}"
+        fi
+        llm-fuzz-ci test-fuzz-cases --require-cases -- ${{ inputs.test-paths }} -q
+
+    - id: report
+      uses: NDV-tiime/llm-fuzz-ci/actions/report@v1
+      if: always()
+      with:
+        create-issue: ${{ inputs.create-issue }}
+        github-token: ${{ inputs.github-token }}
+        hard-fail: ${{ inputs.hard-fail }}

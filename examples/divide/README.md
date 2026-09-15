@@ -1,31 +1,25 @@
-# Divide Example
+# divide
 
-This example demonstrates testing without any LLM credentials by using a saved
-input case committed under `.llm-fuzz/cases`.
+A two-line function with an unguarded division, one marked test, and two
+generated inputs committed under `.llm-fuzz/cases`. No API key needed.
 
-The function is intentionally vulnerable:
-
-```python
-def divide(x, y):
-    return x / y
-```
-
-The fuzz marker declares the target and its per-test generation budget. The test
-harness declares the invariant: `divide` should not leak a raw `ZeroDivisionError`.
-
-Run it from the `llm-fuzz-ci` directory:
+From the repository root:
 
 ```bash
 python -m pip install -e .
-llm-fuzz-ci collect examples/divide --output examples/divide/.llm-fuzz/targets.json
-llm-fuzz-ci cases --corpus-dir examples/divide/.llm-fuzz/cases
-llm-fuzz-ci test-fuzz-cases --corpus-dir examples/divide/.llm-fuzz/cases --report examples/divide/.llm-fuzz/reports/test-report.json --require-cases -- examples/divide -q
+
+llm-fuzz-ci test-fuzz-cases \
+  --corpus-dir examples/divide/.llm-fuzz/cases \
+  --report /tmp/test-report.json \
+  --require-cases -- examples/divide -q
+
+llm-fuzz-ci summary \
+  --corpus-dir examples/divide/.llm-fuzz/cases \
+  --report /tmp/test-report.json \
+  --output /tmp/report.md && cat /tmp/report.md
 ```
 
-The test command should fail because the saved input case uses
-`{"x": 1, "y": 0}`.
-
-To make it pass, change `app.py` to:
+One input passes, one fails. Guard the divisor in `app.py` and both pass:
 
 ```python
 def divide(x, y):
@@ -33,5 +27,3 @@ def divide(x, y):
         return None
     return x / y
 ```
-
-Then rerun the test command.
