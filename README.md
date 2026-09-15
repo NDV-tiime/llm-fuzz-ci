@@ -138,7 +138,10 @@ OpenAI's safety classifier sometimes refuses this workload with `flagged for
 possible cybersecurity risk`. `agent: claude` is the quickest way past it;
 [Trusted Access for Cyber](https://chatgpt.com/cyber) is the durable one.
 
-The agent runs unrestricted so it can read your code.
+The agent reads your repository and reaches the network, so it can check how a
+dependency or a vulnerability class actually behaves instead of guessing. It is
+told not to change anything; nothing stops it, so run it on a throwaway checkout,
+which is what a CI runner is.
 
 ## Command line
 

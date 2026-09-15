@@ -265,10 +265,16 @@ def codex_command(
     cmd = ["codex", "exec"]
     has_config = supports_flag(help_text, "--config")
 
+    # Codex only offers the network under workspace-write: read-only denies it
+    # whatever else is configured. The agent needs it to look up a framework or
+    # a CVE, so this is the mode, and the prompt is what keeps it off the repo.
     if supports_flag(help_text, "--sandbox"):
-        cmd.extend(["--sandbox", "read-only"])
+        cmd.extend(["--sandbox", "workspace-write"])
     elif has_config:
-        cmd.extend(["--config", 'sandbox_mode="read-only"'])
+        cmd.extend(["--config", 'sandbox_mode="workspace-write"'])
+
+    if has_config:
+        cmd.extend(["--config", "sandbox_workspace_write.network_access=true"])
 
     if supports_flag(help_text, "--ask-for-approval"):
         cmd.extend(["--ask-for-approval", "never"])

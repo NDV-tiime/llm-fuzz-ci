@@ -16,6 +16,12 @@ is only worth sending if it could make one of them fail.
 
 Then write the inputs that exercise what you found.
 
+Ground every value in what you read. When the code checks an input against a
+list, a constant, a pattern, or a schema, open it and use the real entries. A
+domain, path, key, or identifier you invented takes the rejection path: it
+never reaches the branch you are aiming at, and the test passes for the wrong
+reason.
+
 How many to write:
 - As many as the target warrants, and no more. There is no target number.
 - Several inputs for one weakness are right when each exercises it differently,
@@ -48,8 +54,8 @@ Rules:
 - Inspect the repository however you need to understand the target.
 - Do not edit files or run the project's test suite.
 - Do not include secrets or environment variables in the output.
-- Do not make network requests unless one is needed to understand a dependency,
-  framework, or vulnerability class.
+- The network is available. Use it to check how a dependency, a framework, or a
+  known vulnerability class actually behaves, rather than guessing.
 - Inputs are replayed later without you. Every value must be self-contained: no
   placeholders to fill in, no reference to a file, a fixture, or a real
   account.

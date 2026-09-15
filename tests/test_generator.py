@@ -137,7 +137,8 @@ def test_codex_command_uses_config_approval_when_flag_is_absent(tmp_path):
     )
 
     assert "--ask-for-approval" not in cmd
-    assert cmd[:4] == ["codex", "exec", "--sandbox", "read-only"]
+    assert cmd[:4] == ["codex", "exec", "--sandbox", "workspace-write"]
+    assert "sandbox_workspace_write.network_access=true" in cmd
     assert "--config" in cmd
     assert 'approval_policy="never"' in cmd
     assert "--output-schema" in cmd
