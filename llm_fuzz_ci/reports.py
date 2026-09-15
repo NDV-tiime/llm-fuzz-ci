@@ -12,10 +12,7 @@ ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 # GitHub discards a step summary over 1 MiB and annotates the run with an error.
 SUMMARY_BYTES = 900_000
 
-ARTIFACT_HINT = (
-    "Every input, in full, is in the `llm-fuzz-ci-report` artifact "
-    "(`llm-fuzz-ci-report.md`)."
-)
+ARTIFACT_HINT = "Download the `llm-fuzz-ci-report` artifact for the full report."
 
 OUTCOME_ORDER = ["passed", "failed", "invalid input", "skipped", "not tested"]
 
