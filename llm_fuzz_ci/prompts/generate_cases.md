@@ -48,12 +48,7 @@ What to return:
   shown to a human.
 
 Rules:
-- Analyse only this target and the code it reaches.
-- Produce inputs, not test code and not assertions. The developer's pytest
-  harness decides whether an input is acceptable.
 - Inspect the repository however you need to understand the target.
-- Do not edit files or run the project's test suite.
-- Do not include secrets or environment variables in the output.
 - The network is available. Use it to check how a dependency, a framework, or a
   known vulnerability class actually behaves, rather than guessing.
 - Inputs are replayed later without you. Every value must be self-contained: no
