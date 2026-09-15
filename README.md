@@ -92,16 +92,6 @@ containing that summary. This needs `issues: write` in the job's `permissions`.
 With `hard-fail: true`, the default, a failing input also fails the workflow.
 Set it to `false` to get the summary and the issue without a red build.
 
-A failure means one of three things:
-
-| | |
-| --- | --- |
-| **A real bug** | Your code accepted something it should have rejected. Fix the code. |
-| **A strict assertion** | The input was legitimate and the test was wrong. Fix the test. |
-| **`invalid input`** | The agent guessed a key your function does not take. This never opens an issue and never fails the build. Read the keys you want by name instead of passing `**llm_fuzz_case.input`. |
-
-Each run generates fresh inputs. Nothing is carried over between runs.
-
 ## Supported
 
 | | |
