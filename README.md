@@ -103,7 +103,8 @@ Outputs `failed-inputs`, the number of inputs that failed their test.
 Every run writes a summary to the Actions run page: one row per marked test with
 its outcome, each failing input in full with the assertion that fired, and the
 rest folded away. The `llm-fuzz-ci-report` artifact holds the same run unfolded,
-plus `test-report.json` and `llm-usage.json` if you want to process it.
+plus `test-report.json` and `llm-usage.json` if you want to process it, and
+`agent-trace/`, a transcript per test of what the agent reasoned, ran, and saw.
 
 When an input fails and `create-issue: true`, the action opens a GitHub issue
 containing that summary. This needs `issues: write` in the job's `permissions`.

@@ -18,6 +18,7 @@ CORPUS = ".llm-fuzz/cases"
 TEST_REPORT = ".llm-fuzz/reports/test-report.json"
 USAGE_REPORT = ".llm-fuzz/reports/llm-usage.json"
 BARREN_REPORT = ".llm-fuzz/reports/no-inputs.json"
+TRACES = ".llm-fuzz/reports/agent-trace"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -150,6 +151,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
         max_budget_usd=args.max_budget_usd,
         timeout_seconds=args.timeout_seconds,
         capture_usage=args.show_usage or bool(args.usage_report),
+        trace_dir=Path(TRACES),
     )
 
     dropped = clear_corpus(args.corpus_dir, targets)
@@ -160,6 +162,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
         print(f"Removed inputs for a test that no longer exists: {path.name}")
 
     print(f"Generated {len(result.cases)} input(s) across {len(written)} file(s).")
+    print(f"Agent transcripts written to {TRACES}/.")
     for path in written:
         print(path)
     for reason in result.skipped:

@@ -1,7 +1,7 @@
 import json
 import re
 
-from llm_fuzz_ci.reports import render
+from llm_fuzz_ci.reports import render, transcript
 from llm_fuzz_ci.schema import make_case
 
 TARGET = "tests/test_app.py::test_divide"
@@ -246,3 +246,37 @@ def test_a_run_where_every_target_failed_is_still_a_report():
 
     assert "No generated inputs were found." not in out
     assert "**generation failed**" in out
+
+
+CODEX_STREAM = "\n".join(
+    [
+        '{"type": "thread.started", "thread_id": "t1"}',
+        '{"type": "item.completed", "item": {"type": "reasoning", "text": "**Reading the target**"}}',
+        '{"type": "item.completed", "item": {"type": "command_execution",'
+        ' "command": "rg -n internal_domains", "aggregated_output": "12:internal_domains = {"}}',
+        '{"type": "item.completed", "item": {"type": "agent_message", "text": "Done."}}',
+        '{"type": "turn.completed", "usage": {"input_tokens": 10, "output_tokens": 2}}',
+    ]
+)
+
+
+def test_transcript_shows_reasoning_commands_and_answer():
+    out = transcript(CODEX_STREAM)
+
+    assert "_**Reading the target**_" in out
+    assert "$ rg -n internal_domains" in out
+    assert "12:internal_domains = {" in out
+    assert "Done." in out
+    assert "input_tokens 10" in out
+
+
+def test_transcript_falls_back_to_the_raw_payload_when_it_is_not_an_event_stream():
+    out = transcript('{"result": "one json object, not a stream"}')
+
+    assert "one json object, not a stream" in out
+
+
+def test_transcript_survives_a_truncated_stream():
+    out = transcript(CODEX_STREAM + "\n{not json")
+
+    assert "Done." in out

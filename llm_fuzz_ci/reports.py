@@ -342,3 +342,49 @@ def short_target(target_id: str) -> str:
 
 def escape_html(value: str) -> str:
     return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def transcript(stream: str) -> str:
+    """The agent's own account of a run, as Markdown.
+
+    Codex emits one JSON object per line: what it reasoned, what it ran, what
+    that printed, what it concluded. Reasoning arrives as the short summary the
+    provider is willing to show -- the full chain of thought is encrypted and
+    never leaves the provider, so this is as close to it as anyone gets.
+    """
+    lines: list[str] = []
+    for raw in stream.splitlines():
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            event = json.loads(raw)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        lines += transcript_event(event)
+
+    if not lines:
+        return utf8_safe("\n".join(code_block(stream.strip(), "json")).rstrip())
+    return utf8_safe("\n".join(lines).rstrip())
+
+
+def transcript_event(event: dict[str, Any]) -> list[str]:
+    item = event.get("item") if isinstance(event.get("item"), dict) else {}
+    kind = item.get("type") if event.get("type") == "item.completed" else event.get("type")
+
+    if kind == "reasoning":
+        return [f"_{str(item.get('text', '')).strip()}_", ""]
+    if kind == "command_execution":
+        body = f"$ {item.get('command', '')}\n{item.get('aggregated_output', '')}"
+        return code_block(body.rstrip(), "console")
+    if kind == "agent_message":
+        return [str(item.get("text", "")), ""]
+    if kind == "error":
+        return [f"**Error:** {event.get('message')}", ""]
+    if kind == "turn.completed":
+        usage = event.get("usage") or {}
+        counts = " · ".join(f"{k} {v:,}" for k, v in usage.items() if isinstance(v, int))
+        return [f"---", "", counts, ""] if counts else []
+    return []

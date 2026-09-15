@@ -54,7 +54,9 @@ def test_agent_prompt_is_rendered_from_template(tmp_path):
 def test_claude_generation_uses_required_target_budget_per_target(monkeypatch):
     captured = []
 
-    def fake_claude(target, repo_root, *, model, max_turns, timeout_seconds, capture_usage):
+    def fake_claude(
+        target, repo_root, *, model, max_turns, timeout_seconds, capture_usage, trace_dir
+    ):
         captured.append((target.id, target.budget_usd))
         return generator.Generated(
             [],
@@ -81,7 +83,9 @@ def test_claude_generation_uses_required_target_budget_per_target(monkeypatch):
 def test_global_max_budget_overrides_marker_budget_per_target(monkeypatch):
     captured = []
 
-    def fake_claude(target, repo_root, *, model, max_turns, timeout_seconds, capture_usage):
+    def fake_claude(
+        target, repo_root, *, model, max_turns, timeout_seconds, capture_usage, trace_dir
+    ):
         captured.append((target.id, target.budget_usd))
         return generator.Generated([])
 

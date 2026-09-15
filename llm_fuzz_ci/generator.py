@@ -11,7 +11,14 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Iterable
 
-from .schema import AGENT_OUTPUT_SCHEMA, FuzzCase, FuzzTarget, make_case
+from .reports import transcript
+from .schema import (
+    AGENT_OUTPUT_SCHEMA,
+    FuzzCase,
+    FuzzTarget,
+    make_case,
+    sanitize_target_id,
+)
 from .usage import LLMUsage, extract_usage_from_json_events
 
 @dataclass
@@ -33,6 +40,7 @@ def generate_cases(
     max_budget_usd: float | None = None,
     timeout_seconds: int = 600,
     capture_usage: bool = False,
+    trace_dir: Path | None = None,
 ) -> Generated:
     if provider and agent != "codex":
         raise ValueError(
@@ -67,6 +75,7 @@ def generate_cases(
                     provider=provider,
                     timeout_seconds=timeout_seconds,
                     capture_usage=capture_usage,
+                    trace_dir=trace_dir,
                 )
             else:
                 result = generate_with_claude(
@@ -76,6 +85,7 @@ def generate_cases(
                     max_turns=max_turns,
                     timeout_seconds=timeout_seconds,
                     capture_usage=capture_usage,
+                    trace_dir=trace_dir,
                 )
         except (RuntimeError, ValueError, subprocess.TimeoutExpired) as exc:
             # Targets are independent. Losing one must not discard the inputs
@@ -123,6 +133,27 @@ def merge_usage(total: LLMUsage | None, item: LLMUsage | None) -> LLMUsage | Non
     return total
 
 
+def save_trace(trace_dir: Path | None, target: FuzzTarget, stream: str) -> None:
+    """Keep what the agent did, next to what it produced.
+
+    Two files: the provider's event stream verbatim, and a readable rendering
+    of it. Without them a surprising set of inputs cannot be explained -- there
+    is no way to tell whether the code was read or the values were guessed.
+    """
+    if trace_dir is None or not stream.strip():
+        return
+    trace_dir.mkdir(parents=True, exist_ok=True)
+    name = sanitize_target_id(target.id)
+    (trace_dir / f"{name}.jsonl").write_text(
+        stream, encoding="utf-8", errors="backslashreplace"
+    )
+    (trace_dir / f"{name}.md").write_text(
+        f"# {target.id}\n\n{transcript(stream)}\n",
+        encoding="utf-8",
+        errors="backslashreplace",
+    )
+
+
 def generate_with_codex(
     target: FuzzTarget,
     repo_root: Path,
@@ -131,6 +162,7 @@ def generate_with_codex(
     provider: str | None,
     timeout_seconds: int,
     capture_usage: bool,
+    trace_dir: Path | None,
 ) -> Generated:
     help_text = require_codex()
     prompt = build_prompt(target, repo_root)
@@ -161,6 +193,7 @@ def generate_with_codex(
             timeout=timeout_seconds,
             check=False,
         )
+        save_trace(trace_dir, target, completed.stdout)
         if completed.returncode != 0:
             raise RuntimeError(describe_failure("Codex", cmd, completed))
 
@@ -191,6 +224,7 @@ def generate_with_claude(
     max_turns: int | None,
     timeout_seconds: int,
     capture_usage: bool,
+    trace_dir: Path | None,
 ) -> Generated:
     prompt = build_prompt(target, repo_root)
     cmd = claude_command(
@@ -210,6 +244,7 @@ def generate_with_claude(
         timeout=timeout_seconds,
         check=False,
     )
+    save_trace(trace_dir, target, completed.stdout)
     if completed.returncode != 0:
         raise RuntimeError(describe_failure("Claude", cmd, completed))
     cases, skipped = parse_agent_cases(completed.stdout, target)
@@ -303,6 +338,8 @@ def codex_command(
         cmd.extend(["--model", model])
     if capture_usage and supports_flag(help_text, "--json"):
         cmd.append("--json")
+    if has_config:
+        cmd.extend(["--config", 'model_reasoning_summary="detailed"'])
     return cmd
 
 
