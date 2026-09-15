@@ -10,35 +10,17 @@ writes assertions and never decides pass or fail.
 
 ## Quick start
 
-Mark the tests you want fuzzed. The `llm_fuzz_case` fixture holds one generated
-input.
+Mark the tests you want fuzzed. The agent fills `llm_fuzz_case.input` with
+arguments for the call.
 
 ```python
 import pytest
 
-@pytest.mark.llm_fuzz
+@pytest.mark.llm_fuzz(budget_usd=0.5)
 def test_foo(llm_fuzz_case):
-    result = foo(llm_fuzz_case.input["value"])
+    result = foo(**llm_fuzz_case.input)
     assert "<script>" not in result
 ```
-
-The marker takes two optional arguments.
-
-| Argument | Description |
-| --- | --- |
-| `params` | Limit generation to these input keys. Without it the agent infers them from the harness. |
-| `budget_usd` | Per-test spend limit. Enforced on `claude` only — the Codex CLI has no budget flag. |
-
-```python
-@pytest.mark.llm_fuzz(params=["amount"], budget_usd=0.25)
-def test_transfer(llm_fuzz_case):
-    result = transfer(account_id="acct_1", amount=llm_fuzz_case.input["amount"])
-    assert result.amount >= 0
-```
-
-With `params`, the agent is told the exact keys to produce and anything else it
-returns is dropped before the test sees it. Use it whenever only part of the
-input is attacker-controlled.
 
 Add `.github/workflows/llm-fuzz-ci.yml`:
 
@@ -81,6 +63,24 @@ sees whatever the job sees.
 
 An annotated copy of this workflow is in
 [`templates/llm-fuzz-ci.yml`](templates/llm-fuzz-ci.yml).
+
+## Marker options
+
+| Argument | Description |
+| --- | --- |
+| `budget_usd` | Per-test spend limit. Enforced on `claude` only — the Codex CLI has no budget flag. |
+| `params` | Limit generation to these input keys. Without it the agent works out the whole signature from your harness. |
+
+Use `params` when only part of the input is attacker-controlled. The agent is
+told the exact keys to produce, and anything else it returns is dropped before
+the test sees it.
+
+```python
+@pytest.mark.llm_fuzz(budget_usd=0.5, params=["amount"])
+def test_transfer(llm_fuzz_case):
+    result = transfer(account_id="acct_1", amount=llm_fuzz_case.input["amount"])
+    assert result.amount >= 0
+```
 
 ## Configuration
 
