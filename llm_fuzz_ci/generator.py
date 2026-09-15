@@ -11,7 +11,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Iterable
 
-from .reports import transcript
+from .reports import code_block, transcript
 from .schema import (
     AGENT_OUTPUT_SCHEMA,
     FuzzCase,
@@ -133,7 +133,12 @@ def merge_usage(total: LLMUsage | None, item: LLMUsage | None) -> LLMUsage | Non
     return total
 
 
-def save_trace(trace_dir: Path | None, target: FuzzTarget, stream: str) -> None:
+def save_trace(
+    trace_dir: Path | None,
+    target: FuzzTarget,
+    stream: str,
+    errors: str = "",
+) -> None:
     """Keep what the agent did, next to what it produced.
 
     Two files: the provider's event stream verbatim, and a readable rendering
@@ -147,10 +152,11 @@ def save_trace(trace_dir: Path | None, target: FuzzTarget, stream: str) -> None:
     (trace_dir / f"{name}.jsonl").write_text(
         stream, encoding="utf-8", errors="backslashreplace"
     )
+    body = transcript(stream)
+    if errors.strip():
+        body += "\n\n## stderr\n\n" + "\n".join(code_block(errors.strip(), "text"))
     (trace_dir / f"{name}.md").write_text(
-        f"# {target.id}\n\n{transcript(stream)}\n",
-        encoding="utf-8",
-        errors="backslashreplace",
+        f"# {target.id}\n\n{body}\n", encoding="utf-8", errors="backslashreplace"
     )
 
 
@@ -193,7 +199,7 @@ def generate_with_codex(
             timeout=timeout_seconds,
             check=False,
         )
-        save_trace(trace_dir, target, completed.stdout)
+        save_trace(trace_dir, target, completed.stdout, completed.stderr)
         if completed.returncode != 0:
             raise RuntimeError(describe_failure("Codex", cmd, completed))
 
@@ -244,7 +250,7 @@ def generate_with_claude(
         timeout=timeout_seconds,
         check=False,
     )
-    save_trace(trace_dir, target, completed.stdout)
+    save_trace(trace_dir, target, completed.stdout, completed.stderr)
     if completed.returncode != 0:
         raise RuntimeError(describe_failure("Claude", cmd, completed))
     cases, skipped = parse_agent_cases(completed.stdout, target)
@@ -302,21 +308,23 @@ def codex_command(
     cmd = ["codex", "exec"]
     has_config = supports_flag(help_text, "--config")
 
-    # Codex only offers the network under workspace-write: read-only denies it
-    # whatever else is configured. The agent needs it to look up a framework or
-    # a CVE, so this is the mode, and the prompt is what keeps it off the repo.
-    if supports_flag(help_text, "--sandbox"):
-        cmd.extend(["--sandbox", "workspace-write"])
-    elif has_config:
-        cmd.extend(["--config", 'sandbox_mode="workspace-write"'])
-
-    if has_config:
-        cmd.extend(["--config", "sandbox_workspace_write.network_access=true"])
-
-    if supports_flag(help_text, "--ask-for-approval"):
-        cmd.extend(["--ask-for-approval", "never"])
-    elif has_config:
-        cmd.extend(["--config", 'approval_policy="never"'])
+    # The runner is the sandbox. Codex's own sandbox has to stand up a seccomp
+    # or Landlock policy and, once the network is allowed, a proxy for every
+    # command to go through; when any of that fails on a CI host the agent
+    # silently loses its shell and starts guessing at code it cannot read.
+    if supports_flag(help_text, "--dangerously-bypass-approvals-and-sandbox"):
+        cmd.append("--dangerously-bypass-approvals-and-sandbox")
+    else:
+        if supports_flag(help_text, "--sandbox"):
+            cmd.extend(["--sandbox", "workspace-write"])
+        elif has_config:
+            cmd.extend(["--config", 'sandbox_mode="workspace-write"'])
+        if has_config:
+            cmd.extend(["--config", "sandbox_workspace_write.network_access=true"])
+        if supports_flag(help_text, "--ask-for-approval"):
+            cmd.extend(["--ask-for-approval", "never"])
+        elif has_config:
+            cmd.extend(["--config", 'approval_policy="never"'])
 
     if provider:
         if not has_config:

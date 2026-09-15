@@ -16,6 +16,9 @@ ARTIFACT_HINT = "Download the `llm-fuzz-ci-report` artifact for the full report.
 
 NOTHING_FOUND = "searched"
 
+# Already covered by the matching item.completed.
+NOISE = {"item.started", "item.updated", "thread.started", "turn.started"}
+
 OUTCOME_ORDER = ["passed", "failed", "invalid input", "skipped", "not tested"]
 
 
@@ -389,5 +392,10 @@ def transcript_event(event: dict[str, Any]) -> list[str]:
     if kind == "turn.completed":
         usage = event.get("usage") or {}
         counts = " · ".join(f"{k} {v:,}" for k, v in usage.items() if isinstance(v, int))
-        return [f"---", "", counts, ""] if counts else []
-    return []
+        return ["---", "", counts, ""] if counts else []
+    if kind in NOISE:
+        return []
+    # Anything else is printed rather than dropped. A tool call that the agent
+    # could not make is the single most useful line in a trace, and guessing in
+    # advance which shape it arrives in is how it ends up invisible.
+    return code_block(json.dumps(event, ensure_ascii=False)[:2000], "json")

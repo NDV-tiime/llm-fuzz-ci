@@ -139,10 +139,12 @@ OpenAI's safety classifier sometimes refuses this workload with `flagged for
 possible cybersecurity risk`. `agent: claude` is the quickest way past it;
 [Trusted Access for Cyber](https://chatgpt.com/cyber) is the durable one.
 
-The agent reads your repository and reaches the network, so it can check how a
-dependency or a vulnerability class actually behaves instead of guessing. It is
-told not to change anything; nothing stops it, so run it on a throwaway checkout,
-which is what a CI runner is.
+The agent runs unsandboxed: it reads your repository, runs your code, and reaches
+the network. That is deliberate. An agent that cannot open the file it is
+reasoning about does not say so — it invents one, and the inputs it returns are
+confident and worthless. The isolation is the runner, which is ephemeral and
+holds only what your workflow put there, so give the job the secrets that job
+needs and nothing else.
 
 ## Command line
 

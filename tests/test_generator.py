@@ -1,5 +1,6 @@
 import json
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -414,3 +415,53 @@ def test_nothing_is_enforced_when_the_marker_declares_no_params():
 
     assert [case.input for case in cases] == [{"anything": 1, "goes": 2}]
     assert skipped == []
+
+
+BYPASS = "--dangerously-bypass-approvals-and-sandbox"
+
+HELP_WITH_BYPASS = f"""
+Usage: codex exec [OPTIONS] [PROMPT]
+  -s, --sandbox <SANDBOX_MODE>
+      --config <key=value>
+      {BYPASS}
+      --output-schema <FILE>
+  -o, --output-last-message <FILE>
+"""
+
+HELP_WITHOUT_BYPASS = """
+Usage: codex exec [OPTIONS] [PROMPT]
+  -s, --sandbox <SANDBOX_MODE>
+      --config <key=value>
+      --output-schema <FILE>
+  -o, --output-last-message <FILE>
+"""
+
+
+def codex_argv(help_text):
+    return generator.codex_command(
+        help_text=help_text,
+        schema_path=Path("s.json"),
+        output_path=Path("o.json"),
+        model=None,
+        provider=None,
+        capture_usage=False,
+    )
+
+
+def test_codex_runs_without_a_second_sandbox_when_the_cli_can():
+    """The CI runner is the isolation. Codex sandboxing itself inside it has to
+    stand up a kernel policy and, with the network allowed, a proxy for every
+    command -- and when that fails the agent loses its shell without saying so,
+    then invents the code it cannot read."""
+    cmd = codex_argv(HELP_WITH_BYPASS)
+
+    assert BYPASS in cmd
+    assert "--sandbox" not in cmd
+    assert not any("network_access" in part for part in cmd)
+
+
+def test_codex_keeps_the_sandbox_when_the_cli_offers_no_alternative():
+    cmd = codex_argv(HELP_WITHOUT_BYPASS)
+
+    assert cmd[:4] == ["codex", "exec", "--sandbox", "workspace-write"]
+    assert "sandbox_workspace_write.network_access=true" in cmd

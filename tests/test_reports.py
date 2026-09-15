@@ -293,3 +293,11 @@ def test_transcript_quotes_every_line_of_a_multi_heading_reasoning_item():
 
     assert "> **First heading**" in out
     assert "> **Second heading**" in out
+
+
+def test_transcript_never_silently_drops_an_event_it_does_not_know():
+    out = transcript('{"type": "item.completed", "item": {"type": "sandbox_denial",'
+                     ' "reason": "landlock unavailable"}}')
+
+    assert "sandbox_denial" in out
+    assert "landlock unavailable" in out
