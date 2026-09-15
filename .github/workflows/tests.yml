@@ -27,7 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p work/tests && cd work
-          export PYTHONPATH=.   # what the pythonpath input does
+          export PYTHONPATH=.   # stands in for the caller's own setup step
           printf 'def divide(x, y):\n    return x / y\n' > app.py
           cat > tests/test_divide.py <<'PY'
           import pytest

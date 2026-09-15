@@ -99,9 +99,9 @@ def cmd_collect(args: argparse.Namespace) -> int:
     )
     if status != 0:
         print(
-            "\npytest could not collect those paths. If it could not import your "
-            "code,\ninstall the project first (setup-command) or point at it "
-            "(pythonpath).",
+            "\npytest could not collect those paths. If it could not import "
+            "your code,\ninstall the project before running this, or set "
+            "PYTHONPATH to where it lives.",
             file=sys.stderr,
         )
         return int(status)
