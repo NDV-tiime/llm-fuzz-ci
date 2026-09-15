@@ -147,6 +147,29 @@ transfer(account_id="acct_1", amount=llm_fuzz_case.input["amount"])
 Prefer the second form when only part of the input is attacker-controlled. It
 also avoids a `TypeError` if the agent invents a key the function does not take.
 
+## Let a coding agent write the harness
+
+Marking a test is the part that takes thought: which functions are worth
+fuzzing, and what invariant actually matters. `skills/` holds an agent skill
+that does that job — it finds the risky functions, writes the marked tests, and
+writes assertions you own. It never generates inputs; that stays with CI.
+
+For Claude Code, copy it under the skill's own name:
+
+```bash
+mkdir -p .claude/skills/llm-fuzz-harness
+curl -fsSL https://raw.githubusercontent.com/NDV-tiime/llm-fuzz-ci/v1/skills/SKILL.md \
+  -o .claude/skills/llm-fuzz-harness/SKILL.md
+```
+
+Then ask it to add coverage:
+
+> Add LLM Fuzz marked tests for the risky functions in this repository.
+
+`skills/openai.yaml` is the same thing in OpenAI's agent format.
+
+The skill is guidance, not a dependency — the action works without it.
+
 ## Inputs
 
 Only `test-paths` and `setup-command` matter for most repositories.
