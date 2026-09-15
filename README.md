@@ -92,7 +92,7 @@ containing that summary. This needs `issues: write` in the job's `permissions`.
 With `hard-fail: true`, the default, a failing input also fails the workflow.
 Set it to `false` to get the summary and the issue without a red build.
 
-## Supported
+## Compatibility
 
 | | |
 | --- | --- |
