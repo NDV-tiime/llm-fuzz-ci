@@ -248,14 +248,14 @@ def case_block(entry: dict[str, Any], index: int) -> list[str]:
     """One input, with its outcome. Failures carry their excerpt above."""
     lines = [f"**{index}.** `{entry['outcome']}`", ""]
     if entry.get("rationale"):
-        lines += [f"Why this input: {entry['rationale']}", ""]
+        lines += [str(entry["rationale"]), ""]
     return lines + input_block(entry.get("input"))
 
 
 def failure_block(entry: dict[str, Any]) -> list[str]:
     lines = [f"**`{short_target(entry['target_id'])}`**", ""]
     if entry.get("rationale"):
-        lines += [f"Why this input: {entry['rationale']}", ""]
+        lines += [str(entry["rationale"]), ""]
     lines += input_block(entry.get("input"))
     if entry.get("failure"):
         lines += code_block(failure_excerpt(entry["failure"]), "text")
