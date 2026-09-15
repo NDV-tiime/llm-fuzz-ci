@@ -375,7 +375,10 @@ def transcript_event(event: dict[str, Any]) -> list[str]:
     kind = item.get("type") if event.get("type") == "item.completed" else event.get("type")
 
     if kind == "reasoning":
-        return [f"_{str(item.get('text', '')).strip()}_", ""]
+        # Several headings can arrive in one item, so quote it line by line
+        # rather than wrapping the lot in emphasis that never closes.
+        text = str(item.get("text", "")).strip()
+        return [f"> {line}" if line else ">" for line in text.splitlines()] + [""] if text else []
     if kind == "command_execution":
         body = f"$ {item.get('command', '')}\n{item.get('aggregated_output', '')}"
         return code_block(body.rstrip(), "console")

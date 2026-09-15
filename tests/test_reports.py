@@ -263,7 +263,7 @@ CODEX_STREAM = "\n".join(
 def test_transcript_shows_reasoning_commands_and_answer():
     out = transcript(CODEX_STREAM)
 
-    assert "_**Reading the target**_" in out
+    assert "> **Reading the target**" in out
     assert "$ rg -n internal_domains" in out
     assert "12:internal_domains = {" in out
     assert "Done." in out
@@ -280,3 +280,16 @@ def test_transcript_survives_a_truncated_stream():
     out = transcript(CODEX_STREAM + "\n{not json")
 
     assert "Done." in out
+
+
+
+def test_transcript_quotes_every_line_of_a_multi_heading_reasoning_item():
+    stream = (
+        '{"type": "item.completed", "item": {"type": "reasoning",'
+        ' "text": "**First heading**\\n**Second heading**"}}'
+    )
+
+    out = transcript(stream)
+
+    assert "> **First heading**" in out
+    assert "> **Second heading**" in out
