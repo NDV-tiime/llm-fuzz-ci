@@ -1,4 +1,4 @@
-You are generating saved fuzz cases for LLM Fuzz CI.
+You are generating adversarial inputs for LLM Fuzz CI.
 
 Repository root: {{REPO_ROOT}}
 
@@ -17,7 +17,7 @@ Rules:
 - Generate at most {{MAX_CASES}} cases.
 - Prefer cases that can expose crashes, injection, auth bypass, parsing ambiguity, path traversal, resource exhaustion, or arithmetic errors.
 - Inspect the repository however you need to understand the target.
-- Do not describe pass/fail assertions. The developer's pytest/Vitest harness owns those invariants.
+- Do not describe pass/fail assertions. The developer's pytest harness owns those.
 - Do not edit files.
 - Do not run the project's test suite.
 - Do not perform network requests or web searches unless the agent runtime explicitly enables them and the result is needed to understand a dependency, framework, or vulnerability class.
@@ -34,4 +34,4 @@ Input guidance:
 - For redirects and URL validation, include //host network-path references, userinfo tricks, suffix confusion, ports, mixed casing, and encoded hostnames.
 - For authorization, include exact-match bypasses, prefix scopes, wildcard-like strings, and privileged child scopes.
 
-The caller's pytest/Vitest harness will decide whether a case is acceptable.
+The caller's pytest harness decides whether an input is acceptable.

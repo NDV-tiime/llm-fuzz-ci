@@ -13,7 +13,7 @@ inputs:
   github-token:
     description: Token used to open the issue. Needs issues:write.
     required: false
-    default: ""
+    default: ${{ github.token }}
   hard-fail:
     description: Fail the job when a generated input fails.
     required: false
