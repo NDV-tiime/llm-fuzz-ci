@@ -5,8 +5,7 @@
 Fuzz your Python code with a coding agent, in GitHub Actions.
 
 Mark a test. The agent reads your code and writes adversarial inputs for it.
-Your assertions decide whether any of them are a problem — the agent never
-writes assertions and never decides pass or fail.
+Your assertions decide whether any of them are a problem.
 
 ## Quick start
 
@@ -31,12 +30,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  llm-fuzz-ci:
+  generate:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write
-
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -46,20 +41,44 @@ jobs:
       # Set the project up however you normally do.
       - run: pip install -e .
 
-      - uses: NDV-tiime/llm-fuzz-ci@v1
+      - uses: NDV-tiime/llm-fuzz-ci/actions/generate@v1
         with:
           test-paths: tests
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+
+  test:
+    needs: generate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # The same setup again.
+      - run: pip install -e .
+
+      - uses: NDV-tiime/llm-fuzz-ci@v1
+        with:
+          test-paths: tests
           create-issue: true
 ```
 
 Run it from the Actions tab.
 
-Everything happens in one job, so set the project up the way you would for any
-other test run: dependencies in steps before the action, databases and queues in
-`services`, configuration and credentials in the job's `env`. If pytest can
-import your code in that job, so can the action. The agent runs there too, so it
-sees whatever the job sees.
+Set each job up the way you would for any other test run: dependencies in steps
+before the action, databases and queues in `services`, configuration in the job's
+`env`. If pytest can import your code there, so can the action.
+
+**Two jobs, and the duplicated setup is the point.** The agent runs unsandboxed,
+so it can write to the checkout and to the installed packages. `test` starts on a
+different runner from a clean checkout and takes nothing from `generate` but the
+generated inputs, so nothing the agent did to its own machine can change the
+verdict on its own work. Only `generate` needs a model key; only `test` needs
+`issues: write`.
 
 An annotated copy of this workflow is in
 [`templates/llm-fuzz-ci.yml`](templates/llm-fuzz-ci.yml).
@@ -84,6 +103,8 @@ def test_transfer(llm_fuzz_case):
 
 ## Configuration
 
+`actions/generate` — the job that runs the agent:
+
 | Input | Default | Description |
 | --- | --- | --- |
 | `test-paths` | `tests` | pytest paths holding marked tests |
@@ -93,6 +114,12 @@ def test_transfer(llm_fuzz_case):
 | `openai-api-key` | | key for `codex` |
 | `openrouter-api-key` | | key for `provider: openrouter` |
 | `anthropic-api-key` | | key for `claude` |
+
+`NDV-tiime/llm-fuzz-ci` — the job that runs the inputs and reports:
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `test-paths` | `tests` | must match the generate job |
 | `create-issue` | `false` | open an issue when an input fails |
 | `hard-fail` | `true` | fail the workflow when an input fails |
 

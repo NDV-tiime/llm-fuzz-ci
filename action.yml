@@ -1,5 +1,5 @@
 name: LLM Fuzz CI
-description: A coding agent writes adversarial inputs; your pytest assertions judge them.
+description: Run agent-generated adversarial inputs against your pytest assertions and report.
 author: NDV-tiime
 
 branding:
@@ -11,30 +11,10 @@ inputs:
     description: Space-separated pytest paths holding your marked tests.
     required: false
     default: tests
-  agent:
-    description: "Generator to use: codex or claude."
+  working-directory:
+    description: Repository subdirectory the run happens in.
     required: false
-    default: codex
-  model:
-    description: Model for the selected agent. Empty uses the agent's default.
-    required: false
-    default: ""
-  provider:
-    description: Codex model provider id. Use openrouter for the built-in shortcut.
-    required: false
-    default: ""
-  openai-api-key:
-    description: OpenAI API key, for agent codex.
-    required: false
-    default: ""
-  openrouter-api-key:
-    description: OpenRouter API key, for provider openrouter.
-    required: false
-    default: ""
-  anthropic-api-key:
-    description: Anthropic API key, for agent claude.
-    required: false
-    default: ""
+    default: "."
   create-issue:
     description: Open a GitHub issue when a generated input fails.
     required: false
@@ -56,19 +36,22 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: NDV-tiime/llm-fuzz-ci/actions/generate@v1
+    # This job never runs an agent. It starts from a clean checkout of your
+    # code and takes only the generated inputs from the job that did, so
+    # nothing the agent touched can reach the run that judges its work.
+    - name: Install LLM Fuzz CI
+      shell: bash
+      run: python -m pip install "$GITHUB_ACTION_PATH"
+
+    - name: Fetch the generated inputs
+      uses: actions/download-artifact@v7
       with:
-        test-paths: ${{ inputs.test-paths }}
-        agent: ${{ inputs.agent }}
-        model: ${{ inputs.model }}
-        provider: ${{ inputs.provider }}
-        openai-api-key: ${{ inputs.openai-api-key }}
-        openrouter-api-key: ${{ inputs.openrouter-api-key }}
-        anthropic-api-key: ${{ inputs.anthropic-api-key }}
-        show-usage: "true"
+        name: llm-fuzz-ci-cases
+        path: ${{ inputs.working-directory }}/.llm-fuzz
 
     - name: Run the generated inputs
       shell: bash
+      working-directory: ${{ inputs.working-directory }}
       continue-on-error: true
       run: llm-fuzz-ci test-fuzz-cases --require-cases -- ${{ inputs.test-paths }} -q
 
@@ -76,6 +59,7 @@ runs:
       uses: NDV-tiime/llm-fuzz-ci/actions/report@v1
       if: always()
       with:
+        working-directory: ${{ inputs.working-directory }}
         create-issue: ${{ inputs.create-issue }}
         github-token: ${{ inputs.github-token }}
         hard-fail: ${{ inputs.hard-fail }}
