@@ -11,7 +11,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Iterable
 
-from .schema import AGENT_OUTPUT_SCHEMA, FuzzCase, FuzzTarget
+from .schema import AGENT_OUTPUT_SCHEMA, FuzzCase, FuzzTarget, make_case
 from .usage import LLMUsage, extract_usage_from_json_events
 
 MAX_CASES = 8
@@ -97,6 +97,22 @@ def build_prompt(target: FuzzTarget, repo_root: Path) -> str:
         .replace("{{TARGET_JSON}}", json.dumps(target.to_dict(), indent=2))
         .replace("{{EXAMPLE_INPUT_JSON}}", json.dumps(json.dumps({"x": 1, "y": 0})))
         .replace("{{MAX_CASES}}", str(MAX_CASES))
+        .replace("{{INPUT_KEYS}}", input_keys_rule(target))
+    )
+
+
+def input_keys_rule(target: FuzzTarget) -> str:
+    """Tell the agent which keys to produce, exactly when the marker said so."""
+    if target.params is None:
+        return (
+            "- Infer the input_json keys from the marked pytest harness, "
+            "especially llm_fuzz_case.input access patterns and calls made by "
+            "the test."
+        )
+    names = ", ".join(json.dumps(name) for name in target.params)
+    return (
+        f"- Every input_json must contain exactly these keys and no others: {names}.\n"
+        "- Vary the values, never the key names."
     )
 
 
@@ -155,7 +171,7 @@ def generate_with_codex(
             if output_path.exists()
             else completed.stdout
         )
-        cases, skipped = parse_agent_cases(output_text, target.id)
+        cases, skipped = parse_agent_cases(output_text, target)
         return Generated(
             cases,
             extract_usage_from_json_events(
@@ -198,7 +214,7 @@ def generate_with_claude(
     )
     if completed.returncode != 0:
         raise RuntimeError(describe_failure("Claude", cmd, completed))
-    cases, skipped = parse_agent_cases(completed.stdout, target.id)
+    cases, skipped = parse_agent_cases(completed.stdout, target)
     return Generated(
         cases,
         extract_usage_from_json_events(
@@ -506,13 +522,14 @@ def dedupe(lines: list[str]) -> list[str]:
 
 def parse_agent_cases(
     output_text: str,
-    target_id: str,
+    target: FuzzTarget,
 ) -> tuple[list[FuzzCase], list[str]]:
     """Parse one agent reply into cases for the target that was requested.
 
     Generation is one target per agent call, so the target id is assigned here
-    rather than trusted from the reply. An agent that mangles or invents a
-    target id used to produce a corpus file no test ever reads.
+    rather than trusted from the reply. When the marker declared `params`, the
+    keys are held to it too: extra keys are dropped and an input missing one is
+    discarded, so a wrong guess never reaches the test as a false finding.
     """
     raw = json.loads(strip_markdown(output_text))
     if "result" in raw and isinstance(raw["result"], str):
@@ -524,17 +541,35 @@ def parse_agent_cases(
     skipped: list[str] = []
     for index, item in enumerate(raw["cases"], start=1):
         try:
-            cases.append(FuzzCase.from_dict(dict(item), target_id=target_id))
+            case = FuzzCase.from_dict(dict(item), target_id=target.id)
+            if target.params is not None:
+                case = hold_to_params(case, target.params)
         except (ValueError, TypeError, KeyError) as exc:
-            # One unparseable payload used to discard every other case the
-            # agent produced for this target. Drop that one, keep the rest.
-            skipped.append(f"{target_id} case {index}: {exc}")
+            # One unusable input used to discard every other case the agent
+            # produced for this target. Drop that one, keep the rest.
+            skipped.append(f"{target.id} input {index}: {exc}")
+            continue
+        cases.append(case)
+
     if raw["cases"] and not cases:
         raise ValueError(
-            "No usable cases in the agent reply for "
-            f"{target_id}:\n" + "\n".join(skipped)
+            f"No usable inputs in the agent reply for {target.id}:\n"
+            + "\n".join(skipped)
         )
     return cases, skipped
+
+
+def hold_to_params(case: FuzzCase, params: list[str]) -> FuzzCase:
+    """Keep only the declared keys, and reject an input that is missing one."""
+    missing = [name for name in params if name not in case.input]
+    if missing:
+        raise ValueError(f"missing declared param(s): {', '.join(missing)}")
+    trimmed = {name: case.input[name] for name in params}
+    if trimmed == case.input:
+        return case
+    return make_case(
+        target_id=case.target_id, input_value=trimmed, rationale=case.rationale
+    )
 
 
 def strip_markdown(text: str) -> str:

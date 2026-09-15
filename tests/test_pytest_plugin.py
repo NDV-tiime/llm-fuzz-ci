@@ -58,7 +58,7 @@ def test_marker_rejects_extra_keyword_arguments(tmp_path):
         path=tmp_path / "tests" / "test_app.py",
         obj=lambda: None,
     )
-    marker = SimpleNamespace(args=(), kwargs={"budget_usd": 0.5, "params": ["x"]})
+    marker = SimpleNamespace(args=(), kwargs={"budget_usd": 0.5, "retries": 3})
 
     with pytest.raises(pytest.UsageError, match="params"):
         target_from_marker(item, marker)
@@ -73,4 +73,29 @@ def test_marker_rejects_invalid_budget(tmp_path):
     marker = SimpleNamespace(args=(), kwargs={"budget_usd": 0})
 
     with pytest.raises(pytest.UsageError, match="greater than 0"):
+        target_from_marker(item, marker)
+
+
+def test_marker_accepts_a_params_subset(tmp_path):
+    item = SimpleNamespace(
+        nodeid="tests/test_app.py::test_transfer",
+        path=tmp_path / "tests" / "test_app.py",
+        obj=lambda: None,
+    )
+    marker = SimpleNamespace(args=(), kwargs={"params": ["amount"]})
+
+    target = target_from_marker(item, marker)
+
+    assert target.params == ["amount"]
+
+
+def test_marker_rejects_params_that_is_not_a_list(tmp_path):
+    item = SimpleNamespace(
+        nodeid="tests/test_app.py::test_transfer",
+        path=tmp_path / "tests" / "test_app.py",
+        obj=lambda: None,
+    )
+    marker = SimpleNamespace(args=(), kwargs={"params": "amount"})
+
+    with pytest.raises(pytest.UsageError, match="must be a list of names"):
         target_from_marker(item, marker)

@@ -12,7 +12,7 @@ Rules:
 - Every case must include input_json and rationale.
 - Every case.input_json value must be a valid JSON object encoded as a string.
 - rationale is one sentence saying what weakness the input probes.
-- Infer the input_json keys from the marked pytest harness, especially llm_fuzz_case.input access patterns and calls made by the test.
+{{INPUT_KEYS}}
 - Example input_json for an inferred ["x", "y"] shape: {{EXAMPLE_INPUT_JSON}}
 - Generate at most {{MAX_CASES}} cases.
 - Prefer cases that can expose crashes, injection, auth bypass, parsing ambiguity, path traversal, resource exhaustion, or arithmetic errors.

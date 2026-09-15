@@ -22,6 +22,24 @@ def test_foo(llm_fuzz_case):
     assert "<script>" not in result
 ```
 
+The marker takes two optional arguments.
+
+| Argument | Description |
+| --- | --- |
+| `params` | Limit generation to these input keys. Without it the agent infers them from the harness. |
+| `budget_usd` | Per-test spend limit. Enforced on `claude` only — the Codex CLI has no budget flag. |
+
+```python
+@pytest.mark.llm_fuzz(params=["amount"], budget_usd=0.25)
+def test_transfer(llm_fuzz_case):
+    result = transfer(account_id="acct_1", amount=llm_fuzz_case.input["amount"])
+    assert result.amount >= 0
+```
+
+With `params`, the agent is told the exact keys to produce and anything else it
+returns is dropped before the test sees it. Use it whenever only part of the
+input is attacker-controlled.
+
 Add `.github/workflows/llm-fuzz-ci.yml`:
 
 ```yaml
@@ -108,9 +126,6 @@ Set it to `false` to get the summary and the issue without a red build.
 
 One agent run per marked test, per workflow run. Set `show-usage: true` to print
 the token total in the job log.
-
-`@pytest.mark.llm_fuzz(budget_usd=0.25)` is a hard per-test spend limit on
-`claude`. The Codex CLI has no budget flag, so on `codex` the number is advisory.
 
 ## Agents
 

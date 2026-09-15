@@ -65,7 +65,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
-        "llm_fuzz(budget_usd=None): mark a test as an LLM Fuzz CI target.",
+        "llm_fuzz(budget_usd=None, params=None): mark a test as an LLM Fuzz CI "
+        "target. params limits generation to those input keys.",
     )
     config.llm_fuzz_targets = []  # type: ignore[attr-defined]
     config.llm_fuzz_results = []  # type: ignore[attr-defined]
@@ -192,11 +193,11 @@ def target_from_marker(item: pytest.Item, marker: pytest.Mark) -> FuzzTarget:
             "@pytest.mark.llm_fuzz takes no positional arguments. "
             "Use @pytest.mark.llm_fuzz(budget_usd=0.25)."
         )
-    unknown = set(marker.kwargs) - {"budget_usd"}
+    unknown = set(marker.kwargs) - {"budget_usd", "params"}
     if unknown:
         raise pytest.UsageError(
             f"@pytest.mark.llm_fuzz got unknown arguments: {', '.join(sorted(unknown))}. "
-            "Only budget_usd is supported."
+            "It takes budget_usd and params."
         )
     source = getattr(item, "path", None) or getattr(item, "fspath", None)
     try:
@@ -205,6 +206,7 @@ def target_from_marker(item: pytest.Item, marker: pytest.Mark) -> FuzzTarget:
                 "id": item.nodeid,
                 "target": f"pytest::{item.nodeid}",
                 "budget_usd": marker.kwargs.get("budget_usd"),
+                "params": marker.kwargs.get("params"),
                 "description": item_description(item),
                 "test_nodeid": item.nodeid,
                 "source_file": str(source) if source is not None else None,

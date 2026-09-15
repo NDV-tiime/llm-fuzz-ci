@@ -43,6 +43,7 @@ class FuzzTarget:
     id: str
     target: str
     budget_usd: float | None = None
+    params: list[str] | None = None
     description: str | None = None
     language: str = "python"
     test_nodeid: str | None = None
@@ -54,6 +55,7 @@ class FuzzTarget:
             id=str(data.get("id") or data.get("name") or data["target"]),
             target=str(data["target"]),
             budget_usd=positive_float(data, "budget_usd"),
+            params=name_list(data, "params"),
             description=data.get("description"),
             language=str(data.get("language", "python")),
             test_nodeid=data.get("test_nodeid"),
@@ -62,6 +64,19 @@ class FuzzTarget:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def name_list(data: dict[str, Any], key: str) -> list[str] | None:
+    """Read a list of parameter names, or None when the caller declared none."""
+    value = data.get(key)
+    if value is None:
+        return None
+    if isinstance(value, str) or not isinstance(value, (list, tuple)):
+        raise ValueError(f"Fuzz target {key!r} must be a list of names")
+    names = [str(item) for item in value]
+    if not names or any(not name.strip() for name in names):
+        raise ValueError(f"Fuzz target {key!r} must be a list of non-empty names")
+    return names
 
 
 def positive_float(data: dict[str, Any], key: str) -> float | None:

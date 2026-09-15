@@ -21,7 +21,7 @@ def test_parse_agent_cases_accepts_structured_output():
           ]
         }
         """,
-        "tests/test_app.py::test_divide",
+        FuzzTarget(id="tests/test_app.py::test_divide", target="pytest::t"),
     )
 
     assert skipped == []
@@ -307,20 +307,20 @@ def test_one_unparseable_case_does_not_discard_the_others():
                 ]
             }
         ),
-        "tests/test_app.py::test_x",
+        FuzzTarget(id="tests/test_app.py::test_x", target="pytest::t"),
     )
 
     assert [case.input for case in cases] == [{"a": 1}, {"c": 3}]
     assert len(skipped) == 1
-    assert "case 2" in skipped[0]
+    assert "input 2" in skipped[0]
     assert "not valid JSON" in skipped[0]
 
 
 def test_an_entirely_unparseable_reply_still_fails_loudly():
-    with pytest.raises(ValueError, match="No usable cases"):
+    with pytest.raises(ValueError, match="No usable inputs"):
         generator.parse_agent_cases(
             json.dumps({"cases": [{"input_json": "{'a': 1}", "rationale": "bad"}]}),
-            "tests/test_app.py::test_x",
+            FuzzTarget(id="tests/test_app.py::test_x", target="pytest::t"),
         )
 
 
@@ -346,3 +346,59 @@ def test_one_failing_target_keeps_the_others(monkeypatch):
     assert [case.target_id for case in result.cases] == ["first", "last"]
     assert len(result.skipped) == 1
     assert result.skipped[0].startswith("boom: ")
+
+
+def declared(params):
+    return FuzzTarget(id="tests/test_app.py::test_x", target="pytest::t", params=params)
+
+
+def test_declared_params_are_named_in_the_prompt(tmp_path):
+    prompt = generator.build_prompt(declared(["amount", "currency"]), tmp_path)
+
+    assert 'exactly these keys and no others: "amount", "currency"' in prompt
+    assert "Infer the input_json keys" not in prompt
+
+
+def test_without_params_the_agent_is_told_to_infer_the_keys(tmp_path):
+    prompt = generator.build_prompt(declared(None), tmp_path)
+
+    assert "Infer the input_json keys" in prompt
+    assert "exactly these keys" not in prompt
+
+
+def test_declared_params_drop_keys_the_agent_invented():
+    reply = json.dumps(
+        {"cases": [{"input_json": '{"amount": 5, "precision": 2}', "rationale": "extra"}]}
+    )
+
+    cases, skipped = generator.parse_agent_cases(reply, declared(["amount"]))
+
+    assert [case.input for case in cases] == [{"amount": 5}]
+    assert skipped == []
+
+
+def test_an_input_missing_a_declared_param_is_discarded():
+    reply = json.dumps(
+        {
+            "cases": [
+                {"input_json": '{"amount": 1}', "rationale": "good"},
+                {"input_json": '{"precision": 2}', "rationale": "no amount"},
+            ]
+        }
+    )
+
+    cases, skipped = generator.parse_agent_cases(reply, declared(["amount"]))
+
+    assert [case.input for case in cases] == [{"amount": 1}]
+    assert "missing declared param(s): amount" in skipped[0]
+
+
+def test_nothing_is_enforced_when_the_marker_declares_no_params():
+    reply = json.dumps(
+        {"cases": [{"input_json": '{"anything": 1, "goes": 2}', "rationale": "free"}]}
+    )
+
+    cases, skipped = generator.parse_agent_cases(reply, declared(None))
+
+    assert [case.input for case in cases] == [{"anything": 1, "goes": 2}]
+    assert skipped == []

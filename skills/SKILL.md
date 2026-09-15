@@ -31,6 +31,8 @@ def test_function_security_invariant(llm_fuzz_case):
 
 Guidance:
 
+- `params=[...]` limits generation to those input keys. Declare it whenever
+  only part of the input is attacker-controlled.
 - `budget_usd` is optional. It caps spend on Claude Code only.
 - LLM Fuzz CI derives the target id from the pytest node id.
 - The generator infers input keys from `llm_fuzz_case.input` usages and the real code called by the test.
