@@ -17,8 +17,9 @@ input.
 import pytest
 
 @pytest.mark.llm_fuzz
-def test_rejects_untrusted_redirects(llm_fuzz_case):
-    assert is_safe_redirect(llm_fuzz_case.input["url"]) is False
+def test_foo(llm_fuzz_case):
+    result = foo(llm_fuzz_case.input["value"])
+    assert "<script>" not in result
 ```
 
 Add `.github/workflows/llm-fuzz-ci.yml`:
