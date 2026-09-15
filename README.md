@@ -42,19 +42,21 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Set the project up however you normally do.
+      - run: pip install -e .
+
       - uses: NDV-tiime/llm-fuzz-ci@v1
         with:
           test-paths: tests
-          setup-command: python -m pip install -e .
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           create-issue: true
 ```
 
 Run it from the Actions tab.
 
-`setup-command` is how pytest imports your code. If your project has no
-`pyproject.toml`, install your dependencies there and add `pythonpath: .` — or
-`pythonpath: src` for a src layout.
+The action uses the environment your earlier steps built, so anything works:
+Poetry, uv, a Makefile, service containers, a matrix, caching. If pytest can
+import your code in that job, so can the action.
 
 An annotated copy of this workflow is in
 [`templates/llm-fuzz-ci.yml`](templates/llm-fuzz-ci.yml).
@@ -64,8 +66,6 @@ An annotated copy of this workflow is in
 | Input | Default | Description |
 | --- | --- | --- |
 | `test-paths` | `tests` | pytest paths holding marked tests |
-| `setup-command` | | shell command that installs your project |
-| `pythonpath` | | import path, for code that is not installed |
 | `agent` | `codex` | `codex` or `claude` |
 | `model` | | model for the agent; empty uses its default |
 | `provider` | | Codex provider, for example `openrouter` |
@@ -77,19 +77,39 @@ An annotated copy of this workflow is in
 
 Outputs `failed-inputs`, the number of inputs that failed their test.
 
-## Results
+## Alerts
 
-The run summary lists every marked test with its outcome, shows failing inputs
-in full, and folds the rest away. The `llm-fuzz-ci-report` artifact holds the
-same run unfolded, alongside `test-report.json` and `llm-usage.json`.
+Every run writes a summary to the Actions run page: one row per marked test with
+its outcome, each failing input in full with the assertion that fired, and the
+rest folded away. The `llm-fuzz-ci-report` artifact holds the same run unfolded,
+plus `test-report.json` and `llm-usage.json` if you want to process it.
 
-A failure is one of three things:
+When an input fails and `create-issue: true`, the action opens a GitHub issue
+containing that summary. This needs `issues: write` in the job's `permissions`.
+
+With `hard-fail: true`, the default, a failing input also fails the workflow.
+Set it to `false` to get the summary and the issue without a red build.
+
+A failure means one of three things:
 
 | | |
 | --- | --- |
-| **A real bug** | Fix the code. Copy the input from the artifact into `.llm-fuzz/cases/` to keep the case forever. |
-| **A strict assertion** | The input was legitimate. Fix the test. |
-| **`invalid input`** | The agent guessed a key your function does not take. Never fails the build. Read the keys you want by name instead of passing `**llm_fuzz_case.input`. |
+| **A real bug** | Your code accepted something it should have rejected. Fix the code. |
+| **A strict assertion** | The input was legitimate and the test was wrong. Fix the test. |
+| **`invalid input`** | The agent guessed a key your function does not take. This never opens an issue and never fails the build. Read the keys you want by name instead of passing `**llm_fuzz_case.input`. |
+
+Each run generates fresh inputs. Nothing is carried over between runs.
+
+## Supported
+
+| | |
+| --- | --- |
+| Languages | Python 3.10+ |
+| Test runners | pytest 8+ |
+| Agents | Codex CLI, Claude Code |
+| Models | any model the chosen agent accepts |
+| Providers | OpenAI, Anthropic, OpenRouter (through Codex) |
+| Runners | Linux, macOS |
 
 ## Cost
 
@@ -110,38 +130,7 @@ OpenAI's safety classifier sometimes refuses this workload with `flagged for
 possible cybersecurity risk`. `agent: claude` is the quickest way past it;
 [Trusted Access for Cyber](https://chatgpt.com/cyber) is the durable one.
 
-The agent runs unrestricted so it can read your code. Linux and macOS runners
-only.
-
-## Two jobs instead of one
-
-The quick start runs generation and your tests in a single job. The reusable
-workflow splits them, so the agent runs with only the LLM key and your tests run
-with everything else.
-
-```yaml
-jobs:
-  llm-fuzz-ci:
-    uses: NDV-tiime/llm-fuzz-ci/.github/workflows/llm-fuzz-ci.yml@v1
-    permissions:
-      contents: read
-      issues: write
-    with:
-      test-paths: tests
-      setup-command: python -m pip install -e .
-      create-issue: true
-    secrets:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-```
-
-It also takes `working-directory`, `python-version`, `timeout-seconds`,
-`show-usage` and `max-budget-usd`.
-
-For service containers, a specific runner, or anything else, build the jobs
-yourself from the three actions — `actions/generate`, then
-`llm-fuzz-ci test-fuzz-cases`, then `actions/report`. The reusable workflow in
-[`.github/workflows/llm-fuzz-ci.yml`](.github/workflows/llm-fuzz-ci.yml) is a
-working example to copy.
+The agent runs unrestricted so it can read your code.
 
 ## Command line
 

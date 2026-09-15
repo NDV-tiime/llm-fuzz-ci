@@ -11,14 +11,6 @@ inputs:
     description: Space-separated pytest paths holding your marked tests.
     required: false
     default: tests
-  setup-command:
-    description: Shell command that installs your project so pytest can import it.
-    required: false
-    default: ""
-  pythonpath:
-    description: Extra PYTHONPATH, for code importable from a directory.
-    required: false
-    default: ""
   agent:
     description: "Generator to use: codex or claude."
     required: false
@@ -67,8 +59,6 @@ runs:
     - uses: NDV-tiime/llm-fuzz-ci/actions/generate@v1
       with:
         test-paths: ${{ inputs.test-paths }}
-        setup-command: ${{ inputs.setup-command }}
-        pythonpath: ${{ inputs.pythonpath }}
         agent: ${{ inputs.agent }}
         model: ${{ inputs.model }}
         provider: ${{ inputs.provider }}
@@ -80,14 +70,7 @@ runs:
     - name: Run the generated inputs
       shell: bash
       continue-on-error: true
-      env:
-        LLM_FUZZ_PYTHONPATH: ${{ inputs.pythonpath }}
-      run: |
-        set -euo pipefail
-        if [ -n "$LLM_FUZZ_PYTHONPATH" ]; then
-          export PYTHONPATH="$LLM_FUZZ_PYTHONPATH${PYTHONPATH:+:$PYTHONPATH}"
-        fi
-        llm-fuzz-ci test-fuzz-cases --require-cases -- ${{ inputs.test-paths }} -q
+      run: llm-fuzz-ci test-fuzz-cases --require-cases -- ${{ inputs.test-paths }} -q
 
     - id: report
       uses: NDV-tiime/llm-fuzz-ci/actions/report@v1

@@ -6,14 +6,6 @@ inputs:
     description: Space-separated pytest paths to collect.
     required: false
     default: tests
-  setup-command:
-    description: Shell command that installs the project so pytest can import it.
-    required: false
-    default: ""
-  pythonpath:
-    description: Extra PYTHONPATH, for code importable from a directory.
-    required: false
-    default: ""
   working-directory:
     description: Repository subdirectory to run in.
     required: false
@@ -78,44 +70,20 @@ runs:
       shell: bash
       run: npm install --global @anthropic-ai/claude-code
 
-    - name: Install the project
-      if: ${{ inputs.setup-command != '' }}
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}
-      env:
-        LLM_FUZZ_PYTHONPATH: ${{ inputs.pythonpath }}
-      run: |
-        set -euo pipefail
-        if [ -n "$LLM_FUZZ_PYTHONPATH" ]; then
-          export PYTHONPATH="$LLM_FUZZ_PYTHONPATH${PYTHONPATH:+:$PYTHONPATH}"
-        fi
-        ${{ inputs.setup-command }}
-
     - name: Collect targets
       shell: bash
       working-directory: ${{ inputs.working-directory }}
-      env:
-        LLM_FUZZ_PYTHONPATH: ${{ inputs.pythonpath }}
-      run: |
-        set -euo pipefail
-        if [ -n "$LLM_FUZZ_PYTHONPATH" ]; then
-          export PYTHONPATH="$LLM_FUZZ_PYTHONPATH${PYTHONPATH:+:$PYTHONPATH}"
-        fi
-        llm-fuzz-ci collect ${{ inputs.test-paths }}
+      run: llm-fuzz-ci collect ${{ inputs.test-paths }}
 
     - name: Generate inputs
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        LLM_FUZZ_PYTHONPATH: ${{ inputs.pythonpath }}
         OPENAI_KEY: ${{ inputs.openai-api-key }}
         OPENROUTER_KEY: ${{ inputs.openrouter-api-key }}
         ANTHROPIC_KEY: ${{ inputs.anthropic-api-key }}
       run: |
         set -euo pipefail
-        if [ -n "$LLM_FUZZ_PYTHONPATH" ]; then
-          export PYTHONPATH="$LLM_FUZZ_PYTHONPATH${PYTHONPATH:+:$PYTHONPATH}"
-        fi
         if [ -n "$OPENAI_KEY" ]; then export CODEX_API_KEY="$OPENAI_KEY"; fi
         if [ -n "$OPENROUTER_KEY" ]; then export OPENROUTER_API_KEY="$OPENROUTER_KEY"; fi
         if [ -n "$ANTHROPIC_KEY" ]; then export ANTHROPIC_API_KEY="$ANTHROPIC_KEY"; fi

@@ -1,8 +1,5 @@
-# Copy to .github/workflows/llm-fuzz-ci.yml and edit the two lines marked
-# EDIT ME. Everything else has a working default.
-#
-# Then add your provider key under
-# Settings > Secrets and variables > Actions > New repository secret.
+# Copy to .github/workflows/llm-fuzz-ci.yml and edit the lines marked EDIT ME.
+# Everything else has a working default.
 
 name: LLM Fuzz CI
 
@@ -28,19 +25,15 @@ jobs:
         with:
           python-version: "3.12"
 
+      # EDIT ME — set your project up however you normally do. Poetry, uv, a
+      # Makefile, extra services: anything works. The action reuses whatever
+      # environment these steps leave behind.
+      - run: pip install -e .
+
       - uses: NDV-tiime/llm-fuzz-ci@v1
         with:
           # EDIT ME — where your @pytest.mark.llm_fuzz tests live.
           test-paths: tests
-
-          # EDIT ME — how to install your project so pytest can import it.
-          #   python -m pip install -r requirements.txt
-          #   poetry install --no-interaction
-          #   uv sync --all-extras
-          setup-command: python -m pip install -e .
-
-          # Only if your code is importable from a directory rather than installed.
-          # pythonpath: src
 
           # codex (default) or claude. Leave model unset for the agent default.
           agent: codex
@@ -57,6 +50,5 @@ jobs:
           # Set to false to report failures without failing the workflow.
           hard-fail: true
 
-# Tests that need application secrets? Use the reusable workflow instead, which
-# keeps the agent in a separate job. Service containers or a monorepo
-# subdirectory? Use the three actions in your own jobs. Both are in the README.
+# The agent runs in this job, so it can see whatever this job can see. Keep
+# application secrets in a separate job if that matters to you.
