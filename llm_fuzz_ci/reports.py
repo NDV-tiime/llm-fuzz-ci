@@ -65,7 +65,17 @@ def render(
     lines += inputs_section(by_target(entries), fold, budget)
     if fold:
         lines.append(ARTIFACT_HINT)
-    return "\n".join(lines).rstrip()
+    return utf8_safe("\n".join(lines).rstrip())
+
+
+def utf8_safe(text: str) -> str:
+    """Make text that came from a model encodable as UTF-8.
+
+    A model can emit an unpaired surrogate such as \\ud800. JSON allows it and
+    Python holds it in a str, but no UTF-8 encoder will write it. Show it as
+    the escape it came from rather than crashing the report.
+    """
+    return text.encode("utf-8", "backslashreplace").decode("utf-8")
 
 
 def merge(cases: list[Any], test_report: dict[str, Any] | None) -> list[dict[str, Any]]:

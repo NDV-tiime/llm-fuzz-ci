@@ -195,3 +195,22 @@ def test_a_real_failure_still_wins_over_an_invalid_one():
 
     assert "**1 of 2 tested inputs failed.**" in out
     assert "did not match the function signature" in out
+
+
+def test_an_unpaired_surrogate_does_not_break_the_report():
+    """A model can emit \\ud800. JSON allows it; no UTF-8 encoder will write it."""
+    cases = [case(input_value={"text": "a\ud800b"}, rationale="Unpaired surrogate.")]
+
+    out = render(cases=cases, test_report=report(cases, ["failed"], 1))
+
+    out.encode("utf-8")  # this is what write_text does, and what used to raise
+    assert "\\ud800" in out
+    assert "\ud800" not in out
+
+
+def test_ordinary_non_ascii_is_left_alone():
+    cases = [case(input_value={"text": "Confidentialité 日本語"}, rationale="Accents.")]
+
+    out = render(cases=cases)
+
+    assert "Confidentialité 日本語" in out
