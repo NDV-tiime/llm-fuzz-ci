@@ -6,4 +6,3 @@ build/
 dist/
 .DS_Store
 .llm-fuzz/reports/
-examples/*/.llm-fuzz/reports/

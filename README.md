@@ -35,16 +35,6 @@ Every run leaves this in the Actions summary:
 Failing inputs are shown in full. Everything else folds away behind one section
 per test, and the complete run is attached as an artifact.
 
-## Try it without an API key
-
-```bash
-git clone https://github.com/NDV-tiime/llm-fuzz-ci && cd llm-fuzz-ci
-python -m pip install -e .
-```
-
-Then follow [`examples/divide`](examples/divide) — a committed corpus, two
-inputs, one of them failing. About thirty seconds.
-
 ## Setup
 
 **1. Mark a test.** Take the input from `llm_fuzz_case.input`, call your code,

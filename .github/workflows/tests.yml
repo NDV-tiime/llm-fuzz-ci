@@ -51,19 +51,6 @@ jobs:
           llm-fuzz-ci summary --output report.md
           grep -q "1 of 1 tested inputs failed" report.md
 
-      - name: The example in examples/divide behaves as documented
-        run: |
-          set -euo pipefail
-          llm-fuzz-ci test-fuzz-cases \
-            --corpus-dir examples/divide/.llm-fuzz/cases \
-            --report /tmp/test-report.json \
-            --require-cases -- examples/divide -q || true
-          llm-fuzz-ci summary \
-            --corpus-dir examples/divide/.llm-fuzz/cases \
-            --report /tmp/test-report.json \
-            --output /tmp/report.md
-          grep -q "1 of 2 tested inputs failed" /tmp/report.md
-
       - name: Collecting nothing is an error, not a green run
         run: |
           set -euo pipefail
