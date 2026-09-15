@@ -2,15 +2,16 @@
 
 [![Tests](https://github.com/NDV-tiime/llm-fuzz-ci/actions/workflows/tests.yml/badge.svg)](https://github.com/NDV-tiime/llm-fuzz-ci/actions/workflows/tests.yml)
 
-A GitHub Action that has a coding agent write adversarial inputs for your code,
-then runs them against your own pytest assertions.
+Fuzz your Python code with a coding agent, in GitHub Actions.
 
-The agent only writes inputs. Your assertions decide pass or fail.
+Mark a test. The agent reads your code and writes adversarial inputs for it.
+Your assertions decide whether any of them are a problem — the agent never
+writes assertions and never decides pass or fail.
 
 ## Quick start
 
-**1. Mark the tests you want fuzzed.** The `llm_fuzz_case` fixture holds one
-generated input.
+Mark the tests you want fuzzed. The `llm_fuzz_case` fixture holds one generated
+input.
 
 ```python
 import pytest
@@ -20,7 +21,7 @@ def test_rejects_untrusted_redirects(llm_fuzz_case):
     assert is_safe_redirect(llm_fuzz_case.input["url"]) is False
 ```
 
-**2. Add `.github/workflows/llm-fuzz-ci.yml`.**
+Add `.github/workflows/llm-fuzz-ci.yml`:
 
 ```yaml
 name: LLM Fuzz CI
@@ -49,17 +50,16 @@ jobs:
           create-issue: true
 ```
 
-**3. Add `OPENAI_API_KEY`** under Settings → Secrets and variables → Actions,
-then run the workflow from the Actions tab.
+Run it from the Actions tab.
 
 `setup-command` is how pytest imports your code. If your project has no
-`pyproject.toml`, install your dependencies and add `pythonpath: .` (or
-`pythonpath: src`) instead.
+`pyproject.toml`, install your dependencies there and add `pythonpath: .` — or
+`pythonpath: src` for a src layout.
 
 An annotated copy of this workflow is in
 [`templates/llm-fuzz-ci.yml`](templates/llm-fuzz-ci.yml).
 
-## Inputs
+## Configuration
 
 | Input | Default | Description |
 | --- | --- | --- |
@@ -75,46 +75,49 @@ An annotated copy of this workflow is in
 | `create-issue` | `false` | open an issue when an input fails |
 | `hard-fail` | `true` | fail the workflow when an input fails |
 
-Output: `failed-inputs`, the number of inputs that failed.
+Outputs `failed-inputs`, the number of inputs that failed their test.
 
 ## Results
 
 The run summary lists every marked test with its outcome, shows failing inputs
-in full, and folds the rest away. The `llm-fuzz-ci-report` artifact has the same
-run unfolded, plus `test-report.json` and `llm-usage.json`.
+in full, and folds the rest away. The `llm-fuzz-ci-report` artifact holds the
+same run unfolded, alongside `test-report.json` and `llm-usage.json`.
 
-A failure means one of three things:
+A failure is one of three things:
 
-- **a real bug** — fix the code, and commit the input from the artifact into
-  `.llm-fuzz/cases/` to keep the case;
-- **an assertion that was too strict** — fix the test;
-- **`invalid input`** — the agent guessed a key your function does not take.
-  This never fails the build. Read the keys you want by name rather than
-  passing `**llm_fuzz_case.input`.
+| | |
+| --- | --- |
+| **A real bug** | Fix the code. Copy the input from the artifact into `.llm-fuzz/cases/` to keep the case forever. |
+| **A strict assertion** | The input was legitimate. Fix the test. |
+| **`invalid input`** | The agent guessed a key your function does not take. Never fails the build. Read the keys you want by name instead of passing `**llm_fuzz_case.input`. |
 
 ## Cost
 
-One agent run per marked test, per workflow run. Add `show-usage: true` to print
-the token total.
+One agent run per marked test, per workflow run. Set `show-usage: true` to print
+the token total in the job log.
 
 `@pytest.mark.llm_fuzz(budget_usd=0.25)` is a hard per-test spend limit on
-`claude`. The Codex CLI has no budget flag, so on `codex` it is advisory only.
+`claude`. The Codex CLI has no budget flag, so on `codex` the number is advisory.
 
 ## Agents
 
-`codex` is the default. OpenAI's safety classifier sometimes refuses this
-workload with `flagged for possible cybersecurity risk`; `agent: claude` is the
-quickest way past it, [Trusted Access for Cyber](https://chatgpt.com/cyber) the
-durable one.
+| Agent | Key |
+| --- | --- |
+| `codex` (default) | `openai-api-key`, or `openrouter-api-key` with `provider: openrouter` |
+| `claude` | `anthropic-api-key` |
+
+OpenAI's safety classifier sometimes refuses this workload with `flagged for
+possible cybersecurity risk`. `agent: claude` is the quickest way past it;
+[Trusted Access for Cyber](https://chatgpt.com/cyber) is the durable one.
 
 The agent runs unrestricted so it can read your code. Linux and macOS runners
 only.
 
-## Keeping the agent away from your secrets
+## Two jobs instead of one
 
-The workflow above runs generation and your tests in one job. If your marked
-tests need application secrets, use the reusable workflow instead — it splits
-them into two jobs and gives the generation job only the LLM key.
+The quick start runs generation and your tests in a single job. The reusable
+workflow splits them, so the agent runs with only the LLM key and your tests run
+with everything else.
 
 ```yaml
 jobs:
@@ -131,40 +134,40 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 ```
 
-It also accepts `working-directory`, `python-version`, `timeout-seconds`,
+It also takes `working-directory`, `python-version`, `timeout-seconds`,
 `show-usage` and `max-budget-usd`.
 
-For service containers, a specific runner, or anything else the reusable
-workflow does not expose, compose the three actions in your own jobs:
-`actions/generate`, then `llm-fuzz-ci test-fuzz-cases`, then `actions/report`.
-See [`.github/workflows/llm-fuzz-ci.yml`](.github/workflows/llm-fuzz-ci.yml) for
-a working two-job version to copy.
+For service containers, a specific runner, or anything else, build the jobs
+yourself from the three actions — `actions/generate`, then
+`llm-fuzz-ci test-fuzz-cases`, then `actions/report`. The reusable workflow in
+[`.github/workflows/llm-fuzz-ci.yml`](.github/workflows/llm-fuzz-ci.yml) is a
+working example to copy.
 
-## Pull requests
+## Command line
 
-The quick start uses `workflow_dispatch`. The reusable workflow skips generation
-for pull requests from forks; never use `pull_request_target` for a workflow
-that checks out and runs pull request code.
-
-## CLI
-
-The action is a thin wrapper around a CLI you can run locally.
+The action wraps a CLI you can run locally.
 
 ```bash
 pip install "git+https://github.com/NDV-tiime/llm-fuzz-ci.git@v1"
 export CODEX_API_KEY=...
 
-llm-fuzz-ci collect tests
-llm-fuzz-ci generate --dry-run     # print the prompt, spend nothing
-llm-fuzz-ci generate
-llm-fuzz-ci test-fuzz-cases --require-cases -- tests -q
-llm-fuzz-ci summary
+llm-fuzz-ci collect tests                                   # find marked tests
+llm-fuzz-ci generate --dry-run                              # print the prompt, spend nothing
+llm-fuzz-ci generate                                        # write .llm-fuzz/cases
+llm-fuzz-ci test-fuzz-cases --require-cases -- tests -q     # run them
+llm-fuzz-ci summary                                         # render the report
 ```
 
-## Optional
+## Help writing the tests
 
-`skills/` holds an agent skill for your editor that helps write the marked
-tests. Nothing here needs it.
+Choosing what to fuzz and what to assert is the part that takes thought.
+[`skills/`](skills) holds an agent skill for exactly that: point your editor's
+coding agent at it and ask it to add coverage. It picks out the functions worth
+fuzzing, writes the marked tests, and suggests invariants that catch real
+problems rather than checking for `not None`.
+
+`skills/SKILL.md` is the Claude Code format, `skills/openai.yaml` the OpenAI
+one. The action never reads either — they are for you, before CI runs.
 
 ## License
 
