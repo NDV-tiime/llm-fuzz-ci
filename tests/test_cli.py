@@ -156,3 +156,19 @@ def test_generate_drops_inputs_for_a_test_that_was_renamed(tmp_path, monkeypatch
     assert load_cases(tmp_path / "cases", "divide_v1") == []
     assert [c.input for c in load_cases(tmp_path / "cases", "divide_v2")] == [{"x": 3}]
     assert "no longer exists: divide_v1.jsonl" in capsys.readouterr().out
+
+
+def test_generate_marks_a_target_it_found_nothing_for(tmp_path, monkeypatch):
+    write_targets(
+        tmp_path / "targets.json",
+        [FuzzTarget(id="quiet", target="pytest::tests/test_app.py::test_quiet")],
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "generate_cases", lambda *a, **k: Generated([]))
+
+    assert cli.cmd_generate(generate_args(tmp_path)) == 0
+
+    from llm_fuzz_ci.schema import case_file
+
+    path = case_file(tmp_path / "cases", "quiet")
+    assert path.exists() and path.read_text() == ""

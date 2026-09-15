@@ -14,9 +14,6 @@ from typing import Iterable
 from .schema import AGENT_OUTPUT_SCHEMA, FuzzCase, FuzzTarget, make_case
 from .usage import LLMUsage, extract_usage_from_json_events
 
-MAX_CASES = 8
-
-
 @dataclass
 class Generated:
     cases: list[FuzzCase]
@@ -96,7 +93,6 @@ def build_prompt(target: FuzzTarget, repo_root: Path) -> str:
         template.replace("{{REPO_ROOT}}", str(repo_root))
         .replace("{{TARGET_JSON}}", json.dumps(target.to_dict(), indent=2))
         .replace("{{EXAMPLE_INPUT_JSON}}", json.dumps(json.dumps({"x": 1, "y": 0})))
-        .replace("{{MAX_CASES}}", str(MAX_CASES))
         .replace("{{INPUT_KEYS}}", input_keys_rule(target))
     )
 

@@ -12,6 +12,7 @@ import pytest
 
 from .schema import (
     REPORT_SCHEMA_VERSION,
+    case_file,
     FuzzCase,
     FuzzTarget,
     load_cases,
@@ -102,9 +103,19 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
         )
 
     target = target_from_marker(metafunc.definition, marker)
-    cases = load_cases(metafunc.config.getoption("--llm-fuzz-corpus-dir"), target.id)
+    corpus_dir = metafunc.config.getoption("--llm-fuzz-corpus-dir")
+    cases = load_cases(corpus_dir, target.id)
     if cases:
         params = [pytest.param(case, id=case.id) for case in cases]
+    elif case_file(corpus_dir, target.id).exists():
+        # The agent looked at this target and found nothing worth testing.
+        params = [
+            pytest.param(
+                NoInputs(target.id),
+                marks=pytest.mark.skip(reason="The generator found no weakness to test"),
+                id="no-weakness-found",
+            )
+        ]
     elif metafunc.config.getoption("--llm-fuzz-require-cases"):
         params = [pytest.param(NoInputs(target.id), id="no-inputs")]
     else:

@@ -112,3 +112,23 @@ def test_the_marker_is_required_to_use_the_fixture(pytester):
 
     assert result.ret != 0
     assert "requires @pytest.mark.llm_fuzz" in str(result.stdout) + str(result.stderr)
+
+
+def test_a_target_the_agent_found_nothing_for_is_not_a_failure(project):
+    """The prompt says an empty result is a correct answer, so it must be green."""
+    (project.path / "cases").mkdir(exist_ok=True)
+    (project.path / "cases" / "test_divide.py-test_divide.jsonl").write_text("")
+
+    result, saved = run(project, "--llm-fuzz-require-cases")
+
+    assert result.ret == 0
+    result.assert_outcomes(skipped=1)
+    assert saved["summary"]["failed_cases"] == 0
+
+
+def test_a_target_that_was_never_generated_still_fails(project):
+    """No file at all means generation did not happen, which is a real problem."""
+    result, saved = run(project, "--llm-fuzz-require-cases")
+
+    assert result.ret != 0
+    assert saved["summary"]["failed_cases"] == 1

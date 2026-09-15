@@ -1,37 +1,60 @@
-You are generating adversarial inputs for LLM Fuzz CI.
+You are finding weaknesses in one piece of Python code, and writing the inputs
+that expose them.
 
 Repository root: {{REPO_ROOT}}
 
 Target:
 {{TARGET_JSON}}
 
-Rules:
-- Analyze only the target above and the code it reaches.
-- Produce adversarial inputs, not executable test code or assertions.
-- Return only JSON that matches the provided schema.
-- Every case must include input_json and rationale.
-- Every case.input_json value must be a valid JSON object encoded as a string.
-- rationale is one sentence saying what weakness the input probes.
+The target is a marked pytest test. Read it, then read the application code it
+calls. Work out where that code could mishandle what it is given: crashes,
+injection, authorisation or filter bypass, parsing ambiguity, path traversal,
+resource exhaustion, arithmetic errors, lost escaping.
+
+Then write one input for each weakness you found.
+
+How many to write:
+- One input per distinct weakness. Two inputs that probe the same weakness with
+  different values are one weakness, not two.
+- If you find nothing, return an empty cases list. That is a correct answer.
+- Never pad the list to look thorough. If you cannot name what an input probes
+  in one specific sentence, it does not belong.
+- A small set of sharp inputs is worth more than a long list of variations.
+
+What to return:
+- Only JSON matching the provided schema.
+- Every case has input_json and rationale.
+- input_json is a JSON object encoded as a string.
+- rationale is one sentence naming the weakness that input probes. Not a
+  restatement of the input.
 {{INPUT_KEYS}}
 - Example input_json for an inferred ["x", "y"] shape: {{EXAMPLE_INPUT_JSON}}
-- Generate at most {{MAX_CASES}} cases.
-- Prefer cases that can expose crashes, injection, auth bypass, parsing ambiguity, path traversal, resource exhaustion, or arithmetic errors.
+
+Rules:
+- Analyse only this target and the code it reaches.
+- Produce inputs, not test code and not assertions. The developer's pytest
+  harness decides whether an input is acceptable.
 - Inspect the repository however you need to understand the target.
-- Do not describe pass/fail assertions. The developer's pytest harness owns those.
-- Do not edit files.
-- Do not run the project's test suite.
-- Do not perform network requests or web searches unless the agent runtime explicitly enables them and the result is needed to understand a dependency, framework, or vulnerability class.
+- Do not edit files or run the project's test suite.
 - Do not include secrets or environment variables in the output.
+- Do not make network requests unless one is needed to understand a dependency,
+  framework, or vulnerability class.
 
-Input guidance:
-- Use the target's id, source code, and description to infer the relevant attack families.
-- The target is a marked pytest test. Analyze the application code it calls.
-- For webhook or signature validation, include valid JSON objects whose raw bytes differ from compact sorted JSON, such as whitespace, reordered keys, unicode escapes, or duplicate keys.
-- For LLM/prompt boundaries, include messages that close XML/JSON/Markdown prompt delimiters and introduce system, developer, or tool sections.
-- For path handling, include parent-directory, absolute-path, encoded traversal, and sibling-directory prefix variants.
-- For SQL construction, include quotes, comments, statement terminators, stacked-query attempts, and ASC/DESC direction payloads.
-- For HTML rendering, include script tags, event handlers, quote-breaking attribute payloads, data URLs, and javascript: URLs.
-- For redirects and URL validation, include //host network-path references, userinfo tricks, suffix confusion, ports, mixed casing, and encoded hostnames.
-- For authorization, include exact-match bypasses, prefix scopes, wildcard-like strings, and privileged child scopes.
-
-The caller's pytest harness decides whether an input is acceptable.
+Where weaknesses usually are:
+- Webhook or signature validation: JSON whose raw bytes differ from compact
+  sorted JSON, through whitespace, reordered keys, unicode escapes, or
+  duplicate keys.
+- Prompt boundaries: text that closes XML, JSON or Markdown delimiters and
+  opens a system, developer, or tool section of its own.
+- Path handling: parent-directory, absolute-path, encoded traversal, and
+  sibling-directory prefix variants.
+- SQL construction: quotes, comments, statement terminators, stacked queries,
+  and ordering-direction payloads.
+- HTML rendering: script tags, event handlers, quote-breaking attribute
+  payloads, data URLs, javascript: URLs.
+- Redirects and URL validation: //host network-path references, userinfo
+  tricks, suffix confusion, ports, mixed casing, encoded hostnames.
+- Authorisation: exact-match bypasses, prefix scopes, wildcard-like strings,
+  privileged child scopes.
+- Type and absence: null, wrong type, empty, and missing where the code assumes
+  a populated string.

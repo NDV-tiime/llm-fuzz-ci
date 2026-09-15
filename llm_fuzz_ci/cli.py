@@ -153,6 +153,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
 
     dropped = clear_corpus(args.corpus_dir, targets)
     written = write_cases(args.corpus_dir, result.cases)
+    written += mark_searched(args.corpus_dir, targets, result.cases)
 
     for path in dropped:
         print(f"Removed inputs for a test that no longer exists: {path.name}")
@@ -210,6 +211,24 @@ def cmd_summary(args: argparse.Namespace) -> int:
     path.write_text(content + "\n", encoding="utf-8")
     print(f"Wrote {path}.")
     return 0
+
+
+def mark_searched(corpus_dir: str | Path, targets: list[Any], cases: list[Any]) -> list[Path]:
+    """Leave an empty file for a target the agent found no weakness in.
+
+    Without it the test run cannot tell "the agent looked and found nothing"
+    from "generation never happened", and would fail the build for both.
+    """
+    covered = {case.target_id for case in cases}
+    empty = []
+    for target in targets:
+        if target.id in covered:
+            continue
+        path = case_file(corpus_dir, target.id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("", encoding="utf-8")
+        empty.append(path)
+    return empty
 
 
 def clear_corpus(corpus_dir: str | Path, targets: list[Any]) -> list[Path]:
