@@ -1,6 +1,8 @@
 ---
 name: llm-fuzz-harness
 description: Write or review LLM Fuzz CI harness tests — the marked pytest or vitest tests whose assertions judge agent-generated inputs. Use when asked to add LLM Fuzz coverage, pick functions worth fuzzing, write the invariants a marked test asserts, or prepare a repository for the LLM Fuzz CI action. Not for generating fuzz inputs; the action does that.
+metadata:
+  short-description: "Write the marked tests whose assertions judge LLM Fuzz CI inputs."
 ---
 
 # LLM Fuzz Harness
@@ -46,28 +48,6 @@ fuzzTest("only relative paths are accepted", { budgetUsd: 0.5, params: ["url"] }
 - `budget_usd` / `budgetUsd` caps spend, and is enforced on Claude Code only.
 - The target id is the file path and test name, so renaming a test starts it
   over with a fresh corpus.
-
-## The trap: a test that cannot fail
-
-This is the mistake that wastes whole runs.
-
-```python
-# Wrong. Every input the function rejects passes, having asserted nothing.
-if not is_internal(address):
-    return
-assert "@" in address
-```
-
-An input that misses turns green, and the report says "8 passed" for eight
-inputs that tested nothing. Write assertions that judge **every** input:
-
-```python
-# Right. Both directions are checked, and no input escapes the assertion.
-assert is_internal(address) == (address.count("@") == 1 and domain(address) in ALLOWED)
-```
-
-When an early return is genuinely unavoidable, make the skipped path visible —
-assert something about it rather than returning silently.
 
 ## Ground the invariant in real values
 

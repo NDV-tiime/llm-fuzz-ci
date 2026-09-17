@@ -167,9 +167,9 @@ llm-fuzz-ci summary                                         # render the report
 
 ## Help writing the tests
 
-Choosing what to fuzz and what to assert is the part that takes thought. [`skills/`](skills) holds an agent skill for exactly that: point your editor's coding agent at it and ask it to add coverage. It picks out the functions worth fuzzing and writes the marked tests.
-
-`skills/SKILL.md` is the Claude Code format, `skills/openai.yaml` the OpenAI one.
+Choosing what to fuzz and what to assert is the part that takes thought.
+[`skills/SKILL.md`](skills/SKILL.md) is an agent skill for exactly that: it picks
+out the functions worth fuzzing, writes the marked tests.
 
 ## License
 

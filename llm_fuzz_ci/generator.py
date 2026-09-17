@@ -296,8 +296,6 @@ def claude_command(
         "json",
         "--json-schema",
         json.dumps(AGENT_OUTPUT_SCHEMA),
-        # The agent explores the repository however it needs to. The run is a
-        # throwaway CI checkout, and a restricted agent writes weaker inputs.
         "--permission-mode",
         "bypassPermissions",
     ]
@@ -322,10 +320,6 @@ def codex_command(
     cmd = ["codex", "exec"]
     has_config = supports_flag(help_text, "--config")
 
-    # The runner is the sandbox. Codex's own sandbox has to stand up a seccomp
-    # or Landlock policy and, once the network is allowed, a proxy for every
-    # command to go through; when any of that fails on a CI host the agent
-    # silently loses its shell and starts guessing at code it cannot read.
     if supports_flag(help_text, "--dangerously-bypass-approvals-and-sandbox"):
         cmd.append("--dangerously-bypass-approvals-and-sandbox")
     else:

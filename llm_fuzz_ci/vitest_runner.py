@@ -1,10 +1,3 @@
-"""Run vitest the way the pytest plugin runs pytest.
-
-The JS helper knows only how to describe one target and record one result. The
-shapes on disk -- targets.json, test-report.json -- stay defined here, so both
-runners produce a run the rest of the tool cannot tell apart.
-"""
-
 from __future__ import annotations
 
 import json
