@@ -72,13 +72,38 @@ def test_a_missing_directory_is_no_results_rather_than_a_crash(tmp_path):
     assert vitest_runner.drain(tmp_path / "nothing-here") == []
 
 
-def test_collection_asks_vitest_to_list_rather_than_run(tmp_path, monkeypatch):
-    """Pointing collect at a directory must not execute the tests in it."""
-    monkeypatch.chdir(tmp_path)
+def test_only_files_declaring_a_target_are_handed_to_vitest(tmp_path, monkeypatch):
+    """Collection must not run the ordinary tests living beside the marked ones.
 
-    assert vitest_runner.vitest_command(["tests"], "list")[-2:] == ["list", "tests"]
-    assert "run" not in vitest_runner.vitest_command(["tests"], "list")
-    assert "run" in vitest_runner.vitest_command(["tests"])
+    vitest 5 stopped executing module scope under `vitest list`, so the helper
+    could no longer register itself there. Choosing the files here is the part
+    that does not depend on a vitest version.
+    """
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "a.fuzz.test.mjs").write_text('fuzzTest("x", () => {})')
+    (tmp_path / "tests" / "ordinary.test.mjs").write_text('test("y", () => {})')
+    (tmp_path / "tests" / "notes.md").write_text("fuzzTest")
+
+    found = vitest_runner.target_files(["tests"])
+
+    assert found == ["tests/a.fuzz.test.mjs"]
+
+
+def test_node_modules_is_never_scanned(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    vendored = tmp_path / "tests" / "node_modules" / "pkg"
+    vendored.mkdir(parents=True)
+    (vendored / "index.mjs").write_text("export function fuzzTest() {}")
+
+    assert vitest_runner.target_files(["tests"]) == []
+
+
+def test_a_single_file_path_is_accepted(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "a.fuzz.test.mjs").write_text('fuzzTest("x", () => {})')
+
+    assert vitest_runner.target_files(["a.fuzz.test.mjs"]) == ["a.fuzz.test.mjs"]
 
 
 def test_a_missing_vitest_is_named_rather_than_left_to_npm(tmp_path, monkeypatch):
@@ -106,17 +131,15 @@ def test_a_project_local_vitest_needs_no_probe(tmp_path, monkeypatch):
     vitest_runner.require_vitest()
 
 
-def test_a_clean_run_that_registered_nothing_still_tries_the_other_mode(tmp_path, monkeypatch):
-    """`vitest list` exiting 0 with no targets is the case that hid a CI failure."""
+def test_vitest_is_not_launched_at_all_when_no_file_declares_a_target(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(vitest_runner, "require_vitest", lambda: None)
-    modes = []
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "ordinary.test.mjs").write_text('test("y", () => {})')
 
-    def fake_run(cmd, **kwargs):
-        modes.append("list" if "list" in cmd else "run")
-        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+    def explode(*a, **k):
+        raise AssertionError("should not have launched vitest")
 
-    monkeypatch.setattr(vitest_runner.subprocess, "run", fake_run)
-    vitest_runner.collect(["tests"], str(tmp_path / "targets.json"))
+    monkeypatch.setattr(vitest_runner.subprocess, "run", explode)
 
-    assert modes == ["list", "run"]
+    assert vitest_runner.collect(["tests"], str(tmp_path / "targets.json")) == 0

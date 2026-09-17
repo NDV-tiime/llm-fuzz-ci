@@ -25,13 +25,38 @@ from .schema import (
 )
 
 
-def vitest_command(paths: list[str], mode: str = "run") -> list[str]:
+def vitest_command(paths: list[str]) -> list[str]:
     """Prefer a project-local vitest; fall back to whatever npx resolves."""
     local = Path("node_modules/.bin/vitest")
     base = [str(local)] if local.exists() else ["npx", "--no-install", "vitest"]
-    if mode == "list":
-        return [*base, "list", *paths]
     return [*base, "run", "--reporter=dot", *paths]
+
+
+SOURCE_SUFFIXES = {".js", ".mjs", ".cjs", ".jsx", ".ts", ".mts", ".cts", ".tsx"}
+
+
+def target_files(paths: list[str]) -> list[str]:
+    """The test files that declare a fuzz target.
+
+    Collection must not run a project's ordinary tests, and vitest offers no
+    version-stable way to import a file without running it: `vitest list`
+    stopped executing module scope in vitest 5, which is where the helper
+    registers itself. So the files are chosen here by looking for the call, and
+    only those are handed to vitest -- everything else is never loaded.
+    """
+    found: list[str] = []
+    for raw in paths:
+        start = Path(raw)
+        candidates = [start] if start.is_file() else sorted(start.rglob("*"))
+        for path in candidates:
+            if path.suffix not in SOURCE_SUFFIXES or "node_modules" in path.parts:
+                continue
+            try:
+                if "fuzzTest" in path.read_text(encoding="utf-8", errors="ignore"):
+                    found.append(str(path))
+            except OSError:
+                continue
+    return found
 
 
 def drain(directory: Path) -> list[dict[str, Any]]:
@@ -83,43 +108,20 @@ def collect(paths: list[str], output: str) -> int:
     fallback -- and there the helper's own skip is all that holds tests back.
     """
     require_vitest()
-    for mode in ("list", "run"):
-        with tempfile.TemporaryDirectory(prefix="llm-fuzz-collect-") as tmp:
-            env = os.environ.copy()
-            env["LLM_FUZZ_COLLECT_DIR"] = tmp
-            completed = subprocess.run(
-                vitest_command(paths, mode), env=env, check=False
-            )
-            targets = [FuzzTarget.from_dict(item) for item in drain(Path(tmp))]
-        # A clean exit that found nothing is the case worth retrying: `list`
-        # is the newer path, and a vitest that ignores it still runs.
-        if targets:
-            break
-        if mode == "run":
-            print(diagnose_empty(completed.returncode), file=sys.stderr)
+    files = target_files(paths)
+    if not files:
+        return 0  # the caller reports "no marked tests", with the right advice
+
+    with tempfile.TemporaryDirectory(prefix="llm-fuzz-collect-") as tmp:
+        env = os.environ.copy()
+        env["LLM_FUZZ_COLLECT_DIR"] = tmp
+        completed = subprocess.run(vitest_command(files), env=env, check=False)
+        targets = [FuzzTarget.from_dict(item) for item in drain(Path(tmp))]
 
     if completed.returncode != 0 and not targets:
         return completed.returncode
     write_targets(output, sorted(targets, key=lambda target: target.id))
     return 0
-
-
-def diagnose_empty(returncode: int) -> str:
-    """Say what was tried when neither mode registered a target.
-
-    Collection reaching here means vitest imported the files and the helper
-    still wrote nothing, which is a different problem from a bad path.
-    """
-    local = Path("node_modules/.bin/vitest")
-    return (
-        "\nvitest ran but no fuzzTest() registered itself.\n"
-        f"  vitest:    {local if local.exists() else 'npx'}\n"
-        f"  exit code: {returncode}\n"
-        "  Tried `vitest list` and then `vitest run`.\n"
-        "  If the files do import fuzzTest from llm-fuzz-ci, the helper is not\n"
-        "  seeing LLM_FUZZ_COLLECT_DIR -- check for a vitest config that\n"
-        "  replaces the environment of test workers (`test.env`)."
-    )
 
 
 def run_cases(
