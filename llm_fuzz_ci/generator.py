@@ -99,23 +99,37 @@ def generate_cases(
     return Generated(cases, usage, skipped, failures)
 
 
+LANGUAGE_NAMES = {"python": "Python", "javascript": "JavaScript"}
+
+
 def build_prompt(target: FuzzTarget, repo_root: Path) -> str:
     template = files("llm_fuzz_ci.prompts").joinpath("generate_cases.md").read_text()
     return (
         template.replace("{{REPO_ROOT}}", str(repo_root))
         .replace("{{TARGET_JSON}}", json.dumps(target.to_dict(), indent=2))
+        .replace("{{LANGUAGE}}", language_name(target))
+        .replace("{{FRAMEWORK}}", framework_name(target))
         .replace("{{EXAMPLE_INPUT_JSON}}", json.dumps(json.dumps({"x": 1, "y": 0})))
         .replace("{{INPUT_KEYS}}", input_keys_rule(target))
     )
+
+
+def language_name(target: FuzzTarget) -> str:
+    return LANGUAGE_NAMES.get(target.language.lower(), target.language)
+
+
+def framework_name(target: FuzzTarget) -> str:
+    """The test runner that will replay these inputs, named as the user knows it."""
+    prefix = str(target.target).split("::", 1)[0]
+    return prefix if prefix in {"pytest", "vitest"} else "pytest"
 
 
 def input_keys_rule(target: FuzzTarget) -> str:
     """Tell the agent which keys to produce, exactly when the marker said so."""
     if target.params is None:
         return (
-            "- Infer the input_json keys from the marked pytest harness, "
-            "especially llm_fuzz_case.input access patterns and calls made by "
-            "the test."
+            "- Infer the input_json keys from the marked test itself: how it "
+            "reads the input it is handed, and the call it makes with it."
         )
     names = ", ".join(json.dumps(name) for name in target.params)
     return (

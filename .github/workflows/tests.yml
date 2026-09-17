@@ -71,3 +71,64 @@ jobs:
                   yaml.safe_load(block)
           print("ok")
           PY
+
+  node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - run: python -m pip install -e .
+
+      - name: Smoke-test the vitest runner end to end
+        run: |
+          set -euo pipefail
+          mkdir -p work/tests && cd work
+          npm init -y >/dev/null
+          npm pkg set type=module >/dev/null
+          npm install --no-audit --no-fund --silent vitest "file:$GITHUB_WORKSPACE"
+
+          cat > redirect.mjs <<'JS'
+          export function isSafeRedirect(url) {
+            return !String(url).startsWith("http://");
+          }
+          JS
+          cat > tests/redirect.fuzz.test.mjs <<'JS'
+          import { expect } from "vitest";
+          import { fuzzTest } from "llm-fuzz-ci";
+          import { isSafeRedirect } from "../redirect.mjs";
+
+          fuzzTest("only relative paths are safe", { budgetUsd: 0.05, params: ["url"] }, (input) => {
+            if (!isSafeRedirect(input.url)) return;
+            expect(String(input.url).startsWith("/")).toBe(true);
+          });
+          JS
+          cat > tests/ordinary.test.mjs <<'JS'
+          import { test, expect } from "vitest";
+          test("an ordinary neighbour", () => {
+            console.log("EXECUTED_ORDINARY_TEST");
+            expect(1).toBe(1);
+          });
+          JS
+
+          llm-fuzz-ci collect tests | tee collect.log
+          grep -q "tests/redirect.fuzz.test.mjs::only relative paths are safe" .llm-fuzz/targets.json
+          # collection must not run the neighbouring suite
+          if grep -q EXECUTED_ORDINARY_TEST collect.log; then
+            echo "collect executed an unrelated test"; exit 1
+          fi
+
+          mkdir -p .llm-fuzz/cases
+          printf '%s\n' \
+            '{"target_id": "tests/redirect.fuzz.test.mjs::only relative paths are safe", "input": {"url": "\\evil.com"}, "rationale": "Backslash is not http:// but browsers follow it."}' \
+            > ".llm-fuzz/cases/tests-redirect.fuzz.test.mjs-only-relative-paths-are-safe.jsonl"
+
+          llm-fuzz-ci test-fuzz-cases --require-cases -- tests || true
+          llm-fuzz-ci summary --output report.md
+          cat report.md
+          grep -q "1 of 1 tested inputs failed" report.md

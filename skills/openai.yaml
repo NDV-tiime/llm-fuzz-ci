@@ -1,4 +1,4 @@
 interface:
   display_name: "LLM Fuzz Harness"
-  short_description: "Create pytest fuzz harnesses."
-  default_prompt: "Create LLM Fuzz marked tests for risky functions in this repository. Write deterministic developer-owned assertions, and do not generate saved fuzz inputs."
+  short_description: "Write the marked tests whose assertions judge LLM Fuzz CI inputs."
+  default_prompt: "Find the functions in this repository that handle untrusted input, and write LLM Fuzz CI marked tests for them. Write the assertions yourself, ground them in the repository's real constants, and make sure every input is judged rather than silently skipped. Do not generate fuzz inputs."

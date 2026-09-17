@@ -11,6 +11,10 @@ inputs:
     description: Space-separated pytest paths holding your marked tests.
     required: false
     default: tests
+  runner:
+    description: "Test framework: pytest, vitest, or auto to pick from the paths."
+    required: false
+    default: auto
   working-directory:
     description: Repository subdirectory the run happens in.
     required: false
@@ -23,6 +27,16 @@ inputs:
     description: Token used to open the issue. Needs issues:write.
     required: false
     default: ${{ github.token }}
+  issue-assignees:
+    description: >-
+      Comma-separated logins to assign the issue to. GitHub emails an assignee,
+      so this is how a failing run reaches someone who is not watching the repo.
+    required: false
+    default: ""
+  issue-labels:
+    description: Comma-separated labels to put on the issue.
+    required: false
+    default: ""
   hard-fail:
     description: Fail the job when a generated input fails.
     required: false
@@ -53,7 +67,9 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       continue-on-error: true
-      run: llm-fuzz-ci test-fuzz-cases --require-cases -- ${{ inputs.test-paths }} -q
+      run: >-
+        llm-fuzz-ci test-fuzz-cases --require-cases
+        --runner "${{ inputs.runner }}" -- ${{ inputs.test-paths }}
 
     - id: report
       uses: NDV-tiime/llm-fuzz-ci/actions/report@v1
@@ -62,4 +78,6 @@ runs:
         working-directory: ${{ inputs.working-directory }}
         create-issue: ${{ inputs.create-issue }}
         github-token: ${{ inputs.github-token }}
+        issue-assignees: ${{ inputs.issue-assignees }}
+        issue-labels: ${{ inputs.issue-labels }}
         hard-fail: ${{ inputs.hard-fail }}

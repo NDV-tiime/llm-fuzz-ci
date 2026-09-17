@@ -30,9 +30,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="llm-fuzz-ci")
     commands = parser.add_subparsers(dest="command", required=True)
 
-    collect = commands.add_parser("collect", help="Find pytest llm_fuzz targets")
+    collect = commands.add_parser("collect", help="Find marked fuzz targets")
     collect.add_argument("paths", nargs="*", default=["tests"])
     collect.add_argument("--output", default=TARGETS)
+    add_runner_option(collect)
     collect.set_defaults(func=cmd_collect)
 
     generate = commands.add_parser("generate", help="Generate saved fuzz inputs")
@@ -64,8 +65,9 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--usage-report", default=None)
     generate.set_defaults(func=cmd_generate)
 
-    test = commands.add_parser("test-fuzz-cases", help="Run saved inputs with pytest")
+    test = commands.add_parser("test-fuzz-cases", help="Run the saved inputs")
     test.add_argument("--corpus-dir", default=CORPUS)
+    add_runner_option(test)
     test.add_argument("--report", default=TEST_REPORT)
     test.add_argument("--require-cases", action="store_true")
     test.add_argument("pytest_args", nargs=argparse.REMAINDER)
@@ -87,7 +89,48 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def add_runner_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--runner",
+        choices=["auto", "pytest", "vitest"],
+        default="auto",
+        help="Test framework to drive. auto picks vitest for .js/.ts paths.",
+    )
+
+
+def resolve_runner(choice: str, paths: list[str]) -> str:
+    """Which framework owns these paths.
+
+    Tests live in one language per path, and the extension says which. Only
+    a mixed repo has to say so explicitly.
+    """
+    if choice != "auto":
+        return choice
+    suffixes = {Path(path).suffix for path in paths}
+    if suffixes & {".js", ".mjs", ".ts", ".mts", ".jsx", ".tsx"}:
+        return "vitest"
+    # `any(rglob(...))` stops at the first hit; listing it walks the whole
+    # tree, and a monorepo test directory is a slow thing to walk twice.
+    for path in paths:
+        directory = Path(path)
+        if directory.is_dir() and not any(directory.rglob("*.py")):
+            return "vitest"
+    return "pytest"
+
+
 def cmd_collect(args: argparse.Namespace) -> int:
+    if resolve_runner(args.runner, args.paths) == "vitest":
+        from . import vitest_runner
+
+        if vitest_runner.collect(args.paths, args.output) != 0:
+            print(
+                "\nvitest could not run those paths. Check the project builds "
+                "and that\nvitest is installed (`npm install --save-dev vitest`).",
+                file=sys.stderr,
+            )
+            return 1
+        return report_targets(args)
+
     import pytest
 
     status = pytest.main(
@@ -108,16 +151,30 @@ def cmd_collect(args: argparse.Namespace) -> int:
         )
         return int(status)
 
+    return report_targets(args)
+
+
+MARKER_HELP = {
+    "pytest": (
+        "  - check the test is marked: @pytest.mark.llm_fuzz\n"
+        "  - check the marked test takes the llm_fuzz_case argument"
+    ),
+    "vitest": (
+        "  - check the test uses fuzzTest() from llm-fuzz-ci\n"
+        "  - check the file is one vitest already runs"
+    ),
+}
+
+
+def report_targets(args: argparse.Namespace) -> int:
     targets = load_targets(args.output)
     if not targets:
         # Silently collecting nothing is the most common first-run mistake, and
         # every later step would still be green.
-        paths = " ".join(args.paths)
+        runner = resolve_runner(args.runner, args.paths)
         print(
-            f"No @pytest.mark.llm_fuzz tests found under {paths!r}.\n"
-            "  - check the path is right\n"
-            "  - check the test is marked: @pytest.mark.llm_fuzz\n"
-            "  - check the marked test takes the llm_fuzz_case argument",
+            f"No marked tests found under {' '.join(args.paths)!r}.\n"
+            "  - check the path is right\n" + MARKER_HELP[runner],
             file=sys.stderr,
         )
         return 1
@@ -188,12 +245,27 @@ def cmd_generate(args: argparse.Namespace) -> int:
 
 
 def cmd_test_fuzz_cases(args: argparse.Namespace) -> int:
-    import pytest
-
     Path(args.report).parent.mkdir(parents=True, exist_ok=True)
     forwarded = list(args.pytest_args)
     if forwarded and forwarded[0] == "--":
         forwarded = forwarded[1:]
+
+    if resolve_runner(args.runner, forwarded) == "vitest":
+        from . import vitest_runner
+
+        return vitest_runner.run_cases(
+            forwarded,
+            corpus_dir=args.corpus_dir,
+            report=args.report,
+            require_cases=args.require_cases,
+        )
+
+    import pytest
+
+    # Verbosity is the runner's own flag, so it is chosen here rather than by
+    # the caller: a `-q` meant for pytest reaches vitest as a path.
+    if not any(arg.startswith(("-q", "-v", "--verbos", "--quiet")) for arg in forwarded):
+        forwarded.append("-q")
 
     options = [
         *plugin_args(),

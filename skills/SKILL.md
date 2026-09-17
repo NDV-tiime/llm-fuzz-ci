@@ -1,101 +1,102 @@
 ---
 name: llm-fuzz-harness
-description: Create or update developer-owned LLM Fuzz CI harness tests with pytest markers and deterministic security assertions. Use when asked to add LLM Fuzz coverage to Python functions, identify functions worth fuzzing, write the test wrappers/invariants that consume llm_fuzz_case, or prepare a repository for the LLM Fuzz GitHub Action. Do not use this skill to generate saved fuzz inputs or generated assertion code.
+description: Write or review LLM Fuzz CI harness tests — the marked pytest or vitest tests whose assertions judge agent-generated inputs. Use when asked to add LLM Fuzz coverage, pick functions worth fuzzing, write the invariants a marked test asserts, or prepare a repository for the LLM Fuzz CI action. Not for generating fuzz inputs; the action does that.
 ---
 
 # LLM Fuzz Harness
 
-## Overview
+A marked test does two things: it names a function worth attacking, and it says
+what must remain true whatever that function is handed. The action's agent
+writes the inputs. The assertion is yours, and it is the only thing that decides
+pass or fail.
 
-Create normal pytest tests that declare LLM Fuzz CI targets and assert security invariants. The CI generator later creates saved fuzz inputs for those marked tests; this skill must not generate fuzz input files or let generated assertions decide CI pass/fail.
+## Choosing what to fuzz
 
-## Workflow
+Look for code that is handed something it did not construct: request and header
+parsing, URL and path handling, redirect validation, authorisation decisions,
+template and prompt construction, SQL and shell building, deserialisation,
+HTML rendering, numeric boundaries, file access.
 
-1. Inspect the repository test style and existing fixtures before adding tests.
-2. Identify functions that handle untrusted or ambiguous input: request parsing, URL/path handling, auth decisions, template rendering, command construction, prompt/LLM calls, deserialization, numeric boundaries, file access, or database query construction.
-3. Add or update pytest tests using `@pytest.mark.llm_fuzz`.
-4. Write a harness that calls the real function with `llm_fuzz_case.input`.
-5. Assert deterministic security invariants owned by the developer/test suite.
-6. Run the focused tests locally when possible.
+Prefer functions where you can state the invariant in one sentence. If you
+cannot say what must remain true, the test will not be able to either.
 
-## Required Pattern
+## Writing the test
 
-Use this marker shape:
+Python:
 
 ```python
-@pytest.mark.llm_fuzz
-def test_function_security_invariant(llm_fuzz_case):
-    result = function_name(**llm_fuzz_case.input)
-    assert ...
+@pytest.mark.llm_fuzz(budget_usd=0.5, params=["url"])
+def test_only_relative_paths_are_accepted(llm_fuzz_case):
+    assert is_safe_redirect(llm_fuzz_case.input["url"]) is False or \
+        llm_fuzz_case.input["url"].startswith("/")
 ```
 
-Guidance:
+JavaScript:
 
-- `params=[...]` limits generation to those input keys. Declare it whenever
-  only part of the input is attacker-controlled.
-- `budget_usd` is optional. It caps spend on Claude Code only.
-- LLM Fuzz CI derives the target id from the pytest node id.
-- The generator infers input keys from `llm_fuzz_case.input` usages and the real code called by the test.
-- Put security intent in the test name, assertions, and an optional Python docstring.
-- The marker takes no other options.
-- Keep tests in the repository's normal test tree.
+```js
+import { fuzzTest } from "llm-fuzz-ci";
 
-## Assertion Rules
+fuzzTest("only relative paths are accepted", { budgetUsd: 0.5, params: ["url"] }, (input) => {
+  expect(isSafeRedirect(input.url) && !input.url.startsWith("/")).toBe(false);
+});
+```
 
-Write assertions manually in the test. Do not ask LLM Fuzz CI to generate assertions. Do not write tests that merely check type or non-null output unless that is the actual security invariant.
+- `params` limits generation to those keys. Declare it whenever only part of
+  the input is attacker-controlled; without it the agent infers the whole shape.
+- `budget_usd` / `budgetUsd` caps spend, and is enforced on Claude Code only.
+- The target id is the file path and test name, so renaming a test starts it
+  over with a fresh corpus.
 
-Prefer invariants such as:
+## The trap: a test that cannot fail
 
-- The function rejects or sanitizes invalid input without raw crashes.
-- The output remains inside an allowlisted domain, directory, role, or schema.
-- Sensitive strings, prompts, secrets, stack traces, internal IDs, or privileged tool outputs are not disclosed.
-- Authorization decisions cannot become `True` from malformed input.
-- Generated SQL, shell commands, file paths, URLs, HTML, raw request bodies, or prompts preserve escaping and boundaries.
-- LLM-facing responses do not reveal hidden instructions and do not follow attacker-injected instructions.
+This is the mistake that wastes whole runs.
+
+```python
+# Wrong. Every input the function rejects passes, having asserted nothing.
+if not is_internal(address):
+    return
+assert "@" in address
+```
+
+An input that misses turns green, and the report says "8 passed" for eight
+inputs that tested nothing. Write assertions that judge **every** input:
+
+```python
+# Right. Both directions are checked, and no input escapes the assertion.
+assert is_internal(address) == (address.count("@") == 1 and domain(address) in ALLOWED)
+```
+
+When an early return is genuinely unavoidable, make the skipped path visible —
+assert something about it rather than returning silently.
+
+## Ground the invariant in real values
+
+An assertion that compares against a constant the agent can read is one the
+agent can attack. Import the real allowlist, the real delimiter, the real
+header. An invariant written against an invented example domain is one the
+agent will satisfy without ever reaching the interesting branch.
+
+## Assertions worth writing
+
+- The classification a security decision returns agrees with a plain restatement
+  of what that decision is supposed to mean.
+- Output stays inside an allowlisted domain, directory, role, or schema.
+- Generated SQL, shell, paths, URLs, HTML or prompts keep their escaping and
+  their delimiters: a field's own text cannot add a section or close a quote.
+- Structure is not forgeable: a header, separator or placeholder appears as
+  often after untrusted input as before it.
+- Secrets, stack traces, internal ids and system prompts stay out of output.
 
 Avoid:
 
-- Executing LLM-generated assertion code.
-- Committing generated fuzz inputs while creating the harness, unless the user explicitly asks.
-- Making brittle keyword checks unrelated to a concrete policy.
-- Swallowing all exceptions as success.
-- Calling real external services from generated-input tests unless the project already has isolated fixtures/mocks.
+- Checking only for `not None` or a type.
+- Keyword checks unrelated to a stated policy.
+- Catching every exception and calling it a pass.
+- Calling real external services, unless the project already isolates them.
+- Executing anything the agent wrote. It produces data, never code.
 
-## Examples
+## Final check
 
-Numeric boundary:
-
-```python
-@pytest.mark.llm_fuzz
-def test_divide_fuzz(llm_fuzz_case):
-    """Division must not leak raw ZeroDivisionError for user-supplied numbers."""
-    try:
-        result = divide(**llm_fuzz_case.input)
-    except ZeroDivisionError:
-        pytest.fail("divide should handle y=0 before Python raises ZeroDivisionError")
-
-    assert result is None or isinstance(result, (int, float))
-```
-
-Prompt-injection boundary:
-
-```python
-@pytest.mark.llm_fuzz
-def test_support_agent_prompt_injection(llm_fuzz_case, fake_llm, fake_tools):
-    """User messages must not reveal hidden instructions, secrets, or tool configuration."""
-    response = answer_support_question(llm_fuzz_case.input["message"])
-
-    forbidden = [
-        "system prompt",
-        "developer message",
-        "OPENAI_API_KEY",
-        "internal tool",
-        "hidden instruction",
-    ]
-    assert all(term.lower() not in response.lower() for term in forbidden)
-    assert "I cannot" in response or "support" in response.lower()
-```
-
-## Final Check
-
-Before finishing, report which tests were marked and what each assertion protects. Remind the user to run `llm-fuzz-ci collect`, `llm-fuzz-ci generate`, `llm-fuzz-ci test-fuzz-cases`, and `llm-fuzz-ci summary` after installing LLM Fuzz CI.
+Report which tests you marked and what each assertion protects. For each one,
+answer in a sentence: *which input would make this fail?* If you cannot name
+one, the assertion is too weak to be worth a run.

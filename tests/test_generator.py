@@ -465,3 +465,39 @@ def test_codex_keeps_the_sandbox_when_the_cli_offers_no_alternative():
 
     assert cmd[:4] == ["codex", "exec", "--sandbox", "workspace-write"]
     assert "sandbox_workspace_write.network_access=true" in cmd
+
+
+def test_the_prompt_names_the_language_and_runner_of_the_target():
+    js = generator.build_prompt(
+        FuzzTarget(
+            id="tests/a.test.mjs::rejects",
+            target="vitest::tests/a.test.mjs::rejects",
+            language="javascript",
+        ),
+        Path("/repo"),
+    )
+
+    assert "one piece of JavaScript code" in js
+    assert "a marked vitest test" in js
+    # a JavaScript author should never be told to read a pytest harness
+    assert "pytest" not in js
+    assert "{{" not in js
+
+
+def test_a_python_target_still_reads_as_pytest(tmp_path):
+    py = generator.build_prompt(
+        FuzzTarget(id="tests/test_a.py::test_x", target="pytest::tests/test_a.py::test_x"),
+        tmp_path,
+    )
+
+    assert "one piece of Python code" in py
+    assert "a marked pytest test" in py
+
+
+def test_the_prompt_refuses_an_answer_written_before_reading(tmp_path):
+    """An early stub answer was a real failure mode, not a hypothetical one."""
+    prompt = generator.build_prompt(
+        FuzzTarget(id="t", target="pytest::t"), tmp_path
+    )
+
+    assert "Do not answer before you have read both." in prompt

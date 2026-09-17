@@ -2,15 +2,13 @@
 
 [![Tests](https://github.com/NDV-tiime/llm-fuzz-ci/actions/workflows/tests.yml/badge.svg)](https://github.com/NDV-tiime/llm-fuzz-ci/actions/workflows/tests.yml)
 
-Fuzz your Python code with a coding agent, in GitHub Actions.
+Fuzz your Python or JavaScript code with a coding agent, in GitHub Actions.
 
 Mark a test. The agent reads your code and writes adversarial inputs for it.
-Your assertions decide whether any of them are a problem.
 
 ## Quick start
 
-Mark the tests you want fuzzed. The agent fills `llm_fuzz_case.input` with
-arguments for the call.
+Mark the tests you want fuzzed. The agent fills the input with arguments for the call.
 
 ```python
 import pytest
@@ -19,6 +17,17 @@ import pytest
 def test_foo(llm_fuzz_case):
     result = foo(**llm_fuzz_case.input)
     assert "<script>" not in result
+```
+
+For vitest, `npm install --save-dev github:NDV-tiime/llm-fuzz-ci` and mark it the same way:
+
+```js
+import { expect } from "vitest";
+import { fuzzTest } from "llm-fuzz-ci";
+
+fuzzTest("foo escapes its input", { budgetUsd: 0.5 }, (input) => {
+  expect(foo(input.value)).not.toContain("<script>");
+});
 ```
 
 Add `.github/workflows/llm-fuzz-ci.yml`:
@@ -69,16 +78,7 @@ jobs:
 
 Run it from the Actions tab.
 
-Set each job up the way you would for any other test run: dependencies in steps
-before the action, databases and queues in `services`, configuration in the job's
-`env`. If pytest can import your code there, so can the action.
-
-**Two jobs, and the duplicated setup is the point.** The agent runs unsandboxed,
-so it can write to the checkout and to the installed packages. `test` starts on a
-different runner from a clean checkout and takes nothing from `generate` but the
-generated inputs, so nothing the agent did to its own machine can change the
-verdict on its own work. Only `generate` needs a model key; only `test` needs
-`issues: write`.
+Set each job up the way you would for any other test run: dependencies in steps before the action, databases and queues in `services`, configuration in the job's `env`. If pytest can import your code there, so can the action.
 
 An annotated copy of this workflow is in
 [`templates/llm-fuzz-ci.yml`](templates/llm-fuzz-ci.yml).
@@ -87,12 +87,8 @@ An annotated copy of this workflow is in
 
 | Argument | Description |
 | --- | --- |
-| `budget_usd` | Per-test spend limit. Enforced on `claude` only — the Codex CLI has no budget flag. |
+| `budget_usd` | Per-test spend limit. |
 | `params` | Limit generation to these input keys. Without it the agent works out the whole signature from your harness. |
-
-Use `params` when only part of the input is attacker-controlled. The agent is
-told the exact keys to produce, and anything else it returns is dropped before
-the test sees it.
 
 ```python
 @pytest.mark.llm_fuzz(budget_usd=0.5, params=["amount"])
@@ -107,7 +103,8 @@ def test_transfer(llm_fuzz_case):
 
 | Input | Default | Description |
 | --- | --- | --- |
-| `test-paths` | `tests` | pytest paths holding marked tests |
+| `test-paths` | `tests` | paths holding marked tests |
+| `runner` | `auto` | `pytest`, `vitest`, or `auto` from the path |
 | `agent` | `codex` | `codex` or `claude` |
 | `model` | | model for the agent; empty uses its default |
 | `provider` | | Codex provider, for example `openrouter` |
@@ -120,40 +117,29 @@ def test_transfer(llm_fuzz_case):
 | Input | Default | Description |
 | --- | --- | --- |
 | `test-paths` | `tests` | must match the generate job |
+| `runner` | `auto` | must match the generate job |
 | `create-issue` | `false` | open an issue when an input fails |
+| `issue-assignees` | | comma-separated logins to assign it to |
+| `issue-labels` | | comma-separated labels to put on it |
 | `hard-fail` | `true` | fail the workflow when an input fails |
 
 Outputs `failed-inputs`, the number of inputs that failed their test.
 
 ## Alerts
 
-Every run writes a summary to the Actions run page: one row per marked test with
-its outcome, each failing input in full with the assertion that fired, and the
-rest folded away. The `llm-fuzz-ci-report` artifact holds the same run unfolded,
-plus `test-report.json` and `llm-usage.json` if you want to process it, and
-`agent-trace/`, a transcript per test of what the agent reasoned, ran, and saw.
+Every run writes a summary to the Actions run page: one row per marked test with its outcome, each failing input in full with the assertion that fired. The `llm-fuzz-ci-report` artifact holds the same run unfolded, plus `test-report.json` and `llm-usage.json`, and `agent-trace/`, a transcript per test of what the agent reasoned, ran, and saw.
 
-When an input fails and `create-issue: true`, the action opens a GitHub issue
-containing that summary. This needs `issues: write` in the job's `permissions`.
+All of the following are off unless you turn them on.
 
-With `hard-fail: true`, the default, a failing input also fails the workflow.
-Set it to `false` to get the summary and the issue without a red build.
+**An issue.** With `create-issue: true` every failing run opens one, titled with the number of failing inputs and linking back to the run. Needs `issues: write`.
 
-## Compatibility
+**An email.** GitHub emails the assignee of an issue, use`issue-assignees: you` and `issue-labels`.
 
-| | |
-| --- | --- |
-| Languages | Python 3.10+ |
-| Test runners | pytest 8+ |
-| Agents | Codex CLI, Claude Code |
-| Models | any model the chosen agent accepts |
-| Providers | OpenAI, Anthropic, OpenRouter (through Codex) |
-| Runners | Linux, macOS |
+**A red build.** `hard-fail: true`, the default. The failure is the last thing the action does, so the summary, the artifact and the issue all land first. It fails the job, which skips the steps after it and any job that `needs:` it; jobs already running in parallel are not cancelled.
 
-## Cost
+**Anything else.** The action outputs `failed-inputs`, so a step of your own can post to Slack, Teams, or a pager:
 
-One agent run per marked test, per workflow run. Set `show-usage: true` to print
-the token total in the job log.
+Set `hard-fail: false` when you do that, or the job dies before your step runs.
 
 ## Agents
 
@@ -162,16 +148,7 @@ the token total in the job log.
 | `codex` (default) | `openai-api-key`, or `openrouter-api-key` with `provider: openrouter` |
 | `claude` | `anthropic-api-key` |
 
-OpenAI's safety classifier sometimes refuses this workload with `flagged for
-possible cybersecurity risk`. `agent: claude` is the quickest way past it;
-[Trusted Access for Cyber](https://chatgpt.com/cyber) is the durable one.
-
-The agent runs unsandboxed: it reads your repository, runs your code, and reaches
-the network. That is deliberate. An agent that cannot open the file it is
-reasoning about does not say so — it invents one, and the inputs it returns are
-confident and worthless. The isolation is the runner, which is ephemeral and
-holds only what your workflow put there, so give the job the secrets that job
-needs and nothing else.
+OpenAI's safety classifier sometimes refuses this workload with `flagged for possible cybersecurity risk`. `agent: claude` is the quickest way past it; [Trusted Access for Cyber](https://chatgpt.com/cyber) is the durable one.
 
 ## Command line
 
@@ -190,14 +167,9 @@ llm-fuzz-ci summary                                         # render the report
 
 ## Help writing the tests
 
-Choosing what to fuzz and what to assert is the part that takes thought.
-[`skills/`](skills) holds an agent skill for exactly that: point your editor's
-coding agent at it and ask it to add coverage. It picks out the functions worth
-fuzzing, writes the marked tests, and suggests invariants that catch real
-problems rather than checking for `not None`.
+Choosing what to fuzz and what to assert is the part that takes thought. [`skills/`](skills) holds an agent skill for exactly that: point your editor's coding agent at it and ask it to add coverage. It picks out the functions worth fuzzing and writes the marked tests.
 
-`skills/SKILL.md` is the Claude Code format, `skills/openai.yaml` the OpenAI
-one. The action never reads either — they are for you, before CI runs.
+`skills/SKILL.md` is the Claude Code format, `skills/openai.yaml` the OpenAI one.
 
 ## License
 

@@ -1,18 +1,22 @@
-You are finding weaknesses in one piece of Python code, and writing the inputs
-that expose them.
+You are finding weaknesses in one piece of {{LANGUAGE}} code, and writing the
+inputs that expose them.
 
 Repository root: {{REPO_ROOT}}
 
 Target:
 {{TARGET_JSON}}
 
-The target is a marked pytest test. Read it, then read the application code it
-calls. Work out where that code could mishandle what it is given: crashes,
-injection, authorisation or filter bypass, parsing ambiguity, path traversal,
-resource exhaustion, arithmetic errors, lost escaping.
+The target is a marked {{FRAMEWORK}} test. Read it, then read the application
+code it calls. Work out where that code could mishandle what it is given:
+crashes, injection, authorisation or filter bypass, parsing ambiguity, path
+traversal, resource exhaustion, arithmetic errors, lost escaping.
 
 Read the assertions in the marked test as well. They are the oracle: an input
 is only worth sending if it could make one of them fail.
+
+Do not answer before you have read both. An answer written from the target name
+alone is a guess, and a guess that passes is worse than no input at all: it
+reports the code as safe without having tested it.
 
 Then write the inputs that exercise what you found.
 
@@ -55,7 +59,9 @@ Rules:
   placeholders to fill in, no reference to a file, a fixture, or a real
   account.
 
-Where weaknesses usually are:
+Where weaknesses usually are. These are patterns worth recognising, not a list
+to work through: the weakness in this target may be none of them, and forcing a
+target into one of these shapes produces inputs that test nothing.
 - Webhook or signature validation: JSON whose raw bytes differ from compact
   sorted JSON, through whitespace, reordered keys, unicode escapes, or
   duplicate keys.

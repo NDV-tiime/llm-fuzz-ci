@@ -14,6 +14,16 @@ inputs:
     description: Token used to open the issue. Needs issues:write.
     required: false
     default: ${{ github.token }}
+  issue-assignees:
+    description: >-
+      Comma-separated logins to assign the issue to. GitHub emails an assignee,
+      so this is how a failing run reaches someone who is not watching the repo.
+    required: false
+    default: ""
+  issue-labels:
+    description: Comma-separated labels to put on the issue.
+    required: false
+    default: ""
   hard-fail:
     description: Fail the job when a generated input fails.
     required: false
@@ -77,18 +87,37 @@ runs:
     - name: Open an issue
       if: ${{ inputs.create-issue == 'true' && steps.counts.outputs.failed != '0' }}
       uses: actions/github-script@v9
+      env:
+        ASSIGNEES: ${{ inputs.issue-assignees }}
+        LABELS: ${{ inputs.issue-labels }}
+        FAILED: ${{ steps.counts.outputs.failed }}
+        OVERVIEW: ${{ inputs.working-directory }}/.llm-fuzz/reports/overview.md
       with:
         github-token: ${{ inputs.github-token }}
         script: |
           const fs = require('fs');
-          await github.rest.issues.create({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            title: 'LLM Fuzz CI detected a vulnerability',
-            body: fs.readFileSync(
-              '${{ inputs.working-directory }}/.llm-fuzz/reports/overview.md', 'utf8'
-            ),
+          const { owner, repo } = context.repo;
+          const list = (value) =>
+            (value || '').split(',').map((s) => s.trim()).filter(Boolean);
+
+          const run =
+            `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+          const body = [
+            fs.readFileSync(process.env.OVERVIEW, 'utf8'),
+            '',
+            `[Run #${context.runNumber}](${run}) - commit \`${context.sha.slice(0, 7)}\``,
+          ].join('\n');
+
+          const created = await github.rest.issues.create({
+            owner, repo,
+            title: `LLM Fuzz CI: ${process.env.FAILED} generated input(s) failing`,
+            body,
+            assignees: list(process.env.ASSIGNEES),
+            labels: list(process.env.LABELS),
           });
+          core.notice(
+            `${process.env.FAILED} failing input(s); opened issue #${created.data.number}`
+          );
 
     - name: Fail the job
       if: ${{ inputs.hard-fail == 'true' && steps.counts.outputs.failed != '0' }}
