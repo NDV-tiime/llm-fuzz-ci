@@ -5,10 +5,10 @@
   "license": "MIT",
   "type": "module",
   "exports": {
-    ".": "./js/index.mjs"
+    ".": "./index.mjs"
   },
   "files": [
-    "js/index.mjs"
+    "index.mjs"
   ],
   "peerDependencies": {
     "vitest": ">=1"
