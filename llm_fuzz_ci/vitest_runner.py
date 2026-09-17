@@ -11,6 +11,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -90,13 +91,35 @@ def collect(paths: list[str], output: str) -> int:
                 vitest_command(paths, mode), env=env, check=False
             )
             targets = [FuzzTarget.from_dict(item) for item in drain(Path(tmp))]
-        if targets or completed.returncode == 0:
+        # A clean exit that found nothing is the case worth retrying: `list`
+        # is the newer path, and a vitest that ignores it still runs.
+        if targets:
             break
+        if mode == "run":
+            print(diagnose_empty(completed.returncode), file=sys.stderr)
 
     if completed.returncode != 0 and not targets:
         return completed.returncode
     write_targets(output, sorted(targets, key=lambda target: target.id))
     return 0
+
+
+def diagnose_empty(returncode: int) -> str:
+    """Say what was tried when neither mode registered a target.
+
+    Collection reaching here means vitest imported the files and the helper
+    still wrote nothing, which is a different problem from a bad path.
+    """
+    local = Path("node_modules/.bin/vitest")
+    return (
+        "\nvitest ran but no fuzzTest() registered itself.\n"
+        f"  vitest:    {local if local.exists() else 'npx'}\n"
+        f"  exit code: {returncode}\n"
+        "  Tried `vitest list` and then `vitest run`.\n"
+        "  If the files do import fuzzTest from llm-fuzz-ci, the helper is not\n"
+        "  seeing LLM_FUZZ_COLLECT_DIR -- check for a vitest config that\n"
+        "  replaces the environment of test workers (`test.env`)."
+    )
 
 
 def run_cases(

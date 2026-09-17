@@ -104,3 +104,19 @@ def test_a_project_local_vitest_needs_no_probe(tmp_path, monkeypatch):
 
     monkeypatch.setattr(vitest_runner.subprocess, "run", explode)
     vitest_runner.require_vitest()
+
+
+def test_a_clean_run_that_registered_nothing_still_tries_the_other_mode(tmp_path, monkeypatch):
+    """`vitest list` exiting 0 with no targets is the case that hid a CI failure."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(vitest_runner, "require_vitest", lambda: None)
+    modes = []
+
+    def fake_run(cmd, **kwargs):
+        modes.append("list" if "list" in cmd else "run")
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setattr(vitest_runner.subprocess, "run", fake_run)
+    vitest_runner.collect(["tests"], str(tmp_path / "targets.json"))
+
+    assert modes == ["list", "run"]

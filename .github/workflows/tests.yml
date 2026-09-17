@@ -116,6 +116,21 @@ jobs:
           });
           JS
 
+          # Collection depends on one mechanism: an env var set by the CLI
+          # reaching module scope inside a vitest worker. Prove it here, so a
+          # failure names the cause instead of looking like a missing test.
+          ./node_modules/.bin/vitest --version
+          cat > tests/envprobe.test.mjs <<'JS'
+          import { writeFileSync } from "node:fs";
+          import { test } from "vitest";
+          writeFileSync("envprobe.txt", String(process.env.CI_ENV_PROBE ?? "MISSING"));
+          test("probe", () => {});
+          JS
+          rm -f envprobe.txt
+          CI_ENV_PROBE=reached ./node_modules/.bin/vitest list tests >/dev/null 2>&1 || true
+          echo "ENV_IN_WORKER=$(cat envprobe.txt 2>/dev/null || echo NO-FILE-WRITTEN)"
+          rm -f tests/envprobe.test.mjs envprobe.txt
+
           llm-fuzz-ci collect tests | tee collect.log
           grep -q "tests/redirect.fuzz.test.mjs::only relative paths are safe" .llm-fuzz/targets.json
           # collection must not run the neighbouring suite
