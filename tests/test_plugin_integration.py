@@ -132,3 +132,33 @@ def test_a_target_that_was_never_generated_still_fails(project):
 
     assert result.ret != 0
     assert saved["summary"]["failed_cases"] == 1
+
+
+def test_a_plain_pytest_run_writes_the_report_without_being_asked(pytester):
+    """The workflow may call `pytest` in the open, so the path is defaulted."""
+    pytester.makepyfile(
+        test_plain="""
+        import pytest
+
+        @pytest.mark.llm_fuzz(budget_usd=0.1)
+        def test_marked(llm_fuzz_case):
+            assert llm_fuzz_case.input["x"] == 1
+        """
+    )
+    corpus = pytester.path / ".llm-fuzz" / "cases"
+    corpus.mkdir(parents=True)
+    (corpus / "test_plain.py-test_marked.jsonl").write_text(
+        '{"target_id": "test_plain.py::test_marked", "input": {"x": 1}, "rationale": "r"}\n'
+    )
+
+    pytester.runpytest("-q")
+
+    assert (pytester.path / ".llm-fuzz" / "reports" / "test-report.json").exists()
+
+
+def test_an_ordinary_repo_gets_no_report_file(pytester):
+    pytester.makepyfile(test_plain="def test_ordinary(): assert True")
+
+    pytester.runpytest("-q")
+
+    assert not (pytester.path / ".llm-fuzz").exists()

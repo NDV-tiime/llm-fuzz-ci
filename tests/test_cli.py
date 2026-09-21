@@ -14,6 +14,7 @@ def generate_args(tmp_path, **overrides):
         max_turns=None,
         max_budget_usd=None,
         timeout_seconds=600,
+        replay_command=None,
         show_usage=False,
         usage_report=None,
         dry_run=False,
@@ -128,7 +129,13 @@ def test_the_cli_exposes_only_the_commands_ci_uses():
         action for action in parser._actions if isinstance(action, argparse._SubParsersAction)
     )
 
-    assert set(commands.choices) == {"collect", "generate", "test-fuzz-cases", "summary"}
+    assert set(commands.choices) == {
+        "collect",
+        "generate",
+        "test-fuzz-cases",
+        "report",
+        "summary",
+    }
 
 
 def test_generate_drops_inputs_for_a_test_that_was_renamed(tmp_path, monkeypatch, capsys):
@@ -172,3 +179,62 @@ def test_generate_marks_a_target_it_found_nothing_for(tmp_path, monkeypatch):
 
     path = case_file(tmp_path / "cases", "quiet")
     assert path.exists() and path.read_text() == ""
+
+
+def report_args(tmp_path, **overrides):
+    args = dict(
+        corpus_dir=str(tmp_path / "cases"),
+        report=str(tmp_path / "test-report.json"),
+        usage_report=str(tmp_path / "llm-usage.json"),
+        output_dir=str(tmp_path / "reports"),
+        create_issue=False,
+        issue_assignees="",
+        issue_labels="",
+        hard_fail=False,
+    )
+    return Namespace(**{**args, **overrides})
+
+
+def test_report_writes_both_renderings_and_the_step_summary(tmp_path, monkeypatch):
+    case = make_case(target_id="t.py::a", input_value={"x": 1}, rationale="why")
+    write_cases(tmp_path / "cases", [case])
+    (tmp_path / "test-report.json").write_text(
+        json.dumps(
+            {
+                "summary": {"failed_cases": 1},
+                "exitstatus": 1,
+                "results": [{"case_id": case.id, "outcome": "failed"}],
+            }
+        )
+    )
+    step_summary = tmp_path / "step.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(step_summary))
+    monkeypatch.chdir(tmp_path)
+
+    assert cli.cmd_report(report_args(tmp_path)) == 0
+
+    assert (tmp_path / "reports" / "overview.md").exists()
+    assert (tmp_path / "reports" / "llm-fuzz-ci-report.md").exists()
+    assert "LLM Fuzz CI" in step_summary.read_text()
+
+
+def test_hard_fail_turns_a_failing_input_into_a_non_zero_exit(tmp_path, monkeypatch):
+    case = make_case(target_id="t.py::a", input_value={"x": 1})
+    write_cases(tmp_path / "cases", [case])
+    (tmp_path / "test-report.json").write_text(
+        json.dumps({"summary": {"failed_cases": 2}, "exitstatus": 1, "results": []})
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert cli.cmd_report(report_args(tmp_path, hard_fail=True)) == 1
+    assert cli.cmd_report(report_args(tmp_path, hard_fail=False)) == 0
+
+
+def test_no_issue_is_attempted_without_a_token(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+
+    cli.open_issue("body", 1, "", "")
+
+    assert "permissions: issues: write" in capsys.readouterr().err

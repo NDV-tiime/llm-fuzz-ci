@@ -1,10 +1,5 @@
 # Copy to .github/workflows/llm-fuzz-ci.yml and edit the lines marked EDIT ME.
 # Everything else has a working default.
-#
-# Two jobs, on purpose. The agent runs unsandboxed, so it could edit your code
-# or your installed packages. `test` starts on a fresh runner from a clean
-# checkout and takes only the generated inputs, so whatever the agent did to its
-# own machine cannot change the verdict on its own work.
 
 name: LLM Fuzz CI
 
@@ -18,10 +13,11 @@ on:
   # pull_request:
 
 jobs:
-  generate:
+  llm-fuzz-ci:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      issues: write # only needed when --create-issue is passed
 
     steps:
       - uses: actions/checkout@v7
@@ -30,14 +26,20 @@ jobs:
           python-version: "3.12"
 
       # EDIT ME — set your project up however you normally do. Poetry, uv, a
-      # Makefile, extra services: anything works. The agent needs pytest to be
-      # able to import your code, same as a normal test run.
+      # Makefile, extra services: anything works. If pytest or vitest can import
+      # your code after these steps, so can the agent.
+      #
+      # For a Node project add actions/setup-node and `npm ci` here as well.
       - run: pip install -e .
 
-      - uses: NDV-tiime/llm-fuzz-ci/actions/generate@v1
+      # 1. The agent reads your code and writes inputs into .llm-fuzz/cases
+      - uses: NDV-tiime/llm-fuzz-ci@v1
         with:
-          # EDIT ME — where your @pytest.mark.llm_fuzz tests live.
+          # EDIT ME — where your marked tests live.
           test-paths: tests
+
+          # EDIT ME — the command in step 2, shown to the agent as context.
+          test-command: pytest tests
 
           # codex (default) or claude. Leave model unset for the agent default.
           agent: codex
@@ -48,30 +50,20 @@ jobs:
           #   claude -> anthropic-api-key
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 
-  test:
-    needs: generate
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write # only needed when create-issue is true
+      # 2. Your own test command. No flags needed: the plugin loads itself and
+      #    reads .llm-fuzz/cases.  EDIT ME for Node:  npx vitest run tests
+      - run: pytest tests
+        continue-on-error: true
 
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      # 3. Summary on the run page, an issue, and the exit code.
+      #    Drop --create-issue or --hard-fail to turn either off.
+      - run: llm-fuzz-ci report --create-issue --hard-fail
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      # Keep the full report and the agent's transcript.
+      - uses: actions/upload-artifact@v7
+        if: always()
         with:
-          python-version: "3.12"
-
-      # EDIT ME — the same setup as above. This job never runs an agent; it only
-      # replays the inputs the agent wrote.
-      - run: pip install -e .
-
-      - uses: NDV-tiime/llm-fuzz-ci@v1
-        with:
-          # EDIT ME — must match test-paths in the generate job.
-          test-paths: tests
-
-          # Open an issue when a generated input fails a marked test.
-          create-issue: true
-
-          # Set to false to report failures without failing the workflow.
-          hard-fail: true
+          name: llm-fuzz-ci-report
+          path: .llm-fuzz/reports

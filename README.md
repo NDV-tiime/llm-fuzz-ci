@@ -39,48 +39,66 @@ on:
   workflow_dispatch:
 
 jobs:
-  generate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      # Set the project up however you normally do.
-      - run: pip install -e .
-
-      - uses: NDV-tiime/llm-fuzz-ci/actions/generate@v1
-        with:
-          test-paths: tests
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-
-  test:
-    needs: generate
+  llm-fuzz-ci:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
+
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      - run: pip install -e .          # your setup, however you do it
 
-      # The same setup again.
-      - run: pip install -e .
+      # 1. the agent writes inputs into .llm-fuzz/cases
+      - uses: NDV-tiime/llm-fuzz-ci@v1
+        with:
+          test-paths: tests
+          test-command: pytest tests
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+
+      # 2. your own test command runs them
+      - run: pytest tests
+        continue-on-error: true
+
+      # 3. summary, issue, exit code
+      - run: llm-fuzz-ci report --create-issue --hard-fail
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: llm-fuzz-ci-report
+          path: .llm-fuzz/reports
+```
+
+For a Node project, three lines change:
+
+```yaml
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - run: npm ci
 
       - uses: NDV-tiime/llm-fuzz-ci@v1
         with:
           test-paths: tests
-          create-issue: true
+          test-command: npx vitest run tests     # <- and here
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+
+      - run: npx vitest run tests                # <- and here
+        continue-on-error: true
 ```
 
 Run it from the Actions tab.
 
-Set each job up the way you would for any other test run: dependencies in steps before the action, databases and queues in `services`, configuration in the job's `env`. If pytest can import your code there, so can the action.
+Set the job up the way you would for any other test run: dependencies in steps
+before it, databases and queues in `services`, configuration in the job's `env`.
 
-An annotated copy of this workflow is in
+An annotated copy is in
 [`templates/llm-fuzz-ci.yml`](templates/llm-fuzz-ci.yml).
 
 ## Marker options
@@ -99,31 +117,34 @@ def test_transfer(llm_fuzz_case):
 
 ## Configuration
 
-`actions/generate` — the job that runs the agent:
 
 | Input | Default | Description |
 | --- | --- | --- |
 | `test-paths` | `tests` | paths holding marked tests |
-| `runner` | `auto` | `pytest`, `vitest`, or `auto` from the path |
+| `test-command` | | the step-2 command, shown to the agent as context |
+| `runner` | `auto` | `pytest`, `vitest`, or `auto` from the paths |
+| `working-directory` | `.` | subdirectory to run in |
 | `agent` | `codex` | `codex` or `claude` |
 | `model` | | model for the agent; empty uses its default |
 | `provider` | | Codex provider, for example `openrouter` |
 | `openai-api-key` | | key for `codex` |
 | `openrouter-api-key` | | key for `provider: openrouter` |
 | `anthropic-api-key` | | key for `claude` |
+| `max-budget-usd` | | override every marker budget |
+| `timeout-seconds` | `600` | maximum generation time per target |
+| `show-usage` | `false` | print the agent's token usage |
 
-`NDV-tiime/llm-fuzz-ci` — the job that runs the inputs and reports:
+`llm-fuzz-ci report`, step 3:
 
-| Input | Default | Description |
-| --- | --- | --- |
-| `test-paths` | `tests` | must match the generate job |
-| `runner` | `auto` | must match the generate job |
-| `create-issue` | `false` | open an issue when an input fails |
-| `issue-assignees` | | comma-separated logins to assign it to |
-| `issue-labels` | | comma-separated labels to put on it |
-| `hard-fail` | `true` | fail the workflow when an input fails |
+| Flag | Description |
+| --- | --- |
+| `--create-issue` | open an issue when an input failed; needs `GITHUB_TOKEN` and `issues: write` |
+| `--issue-assignees` | comma-separated logins; GitHub emails an assignee |
+| `--issue-labels` | comma-separated labels |
+| `--hard-fail` | exit non-zero when an input failed |
 
-Outputs `failed-inputs`, the number of inputs that failed their test.
+Both are off unless you pass them, so the same command works for a run you only
+want to look at.
 
 ## Alerts
 

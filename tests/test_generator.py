@@ -56,7 +56,15 @@ def test_claude_generation_uses_required_target_budget_per_target(monkeypatch):
     captured = []
 
     def fake_claude(
-        target, repo_root, *, model, max_turns, timeout_seconds, capture_usage, trace_dir
+        target,
+        repo_root,
+        *,
+        model,
+        max_turns,
+        timeout_seconds,
+        capture_usage,
+        trace_dir,
+        replay_command,
     ):
         captured.append((target.id, target.budget_usd))
         return generator.Generated(
@@ -85,7 +93,15 @@ def test_global_max_budget_overrides_marker_budget_per_target(monkeypatch):
     captured = []
 
     def fake_claude(
-        target, repo_root, *, model, max_turns, timeout_seconds, capture_usage, trace_dir
+        target,
+        repo_root,
+        *,
+        model,
+        max_turns,
+        timeout_seconds,
+        capture_usage,
+        trace_dir,
+        replay_command,
     ):
         captured.append((target.id, target.budget_usd))
         return generator.Generated([])
@@ -501,3 +517,21 @@ def test_the_prompt_refuses_an_answer_written_before_reading(tmp_path):
     )
 
     assert "Do not answer before you have read both." in prompt
+
+
+def test_the_agent_is_told_how_its_inputs_will_be_replayed():
+    prompt = generator.build_prompt(
+        FuzzTarget(id="t", target="pytest::t"),
+        Path("/repo"),
+        "llm-fuzz-ci test-fuzz-cases --require-cases --runner auto -- tests",
+    )
+
+    assert "Replayed afterwards by, from that root:" in prompt
+    assert "--runner auto -- tests" in prompt
+
+
+def test_no_replay_line_is_invented_when_the_caller_does_not_know_it():
+    prompt = generator.build_prompt(FuzzTarget(id="t", target="pytest::t"), Path("/repo"))
+
+    assert "Replayed afterwards" not in prompt
+    assert "{{" not in prompt

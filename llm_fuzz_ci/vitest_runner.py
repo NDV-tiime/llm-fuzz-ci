@@ -117,6 +117,25 @@ def collect(paths: list[str], output: str) -> int:
     return 0
 
 
+VITEST_RESULTS = ".llm-fuzz/reports/vitest-results"
+
+
+def adopt_plain_run(report: str, results_dir: str = VITEST_RESULTS) -> bool:
+    """Build the report from a `vitest run` the user launched themselves.
+
+    The helper records every case whether or not this CLI started vitest, so a
+    workflow can call the test command in the open. Nothing to adopt when this
+    CLI already wrote the report itself.
+    """
+    if Path(report).exists():
+        return False
+    results = drain(Path(results_dir))
+    if not results:
+        return False
+    write_report(report, results, 1 if any(r.get("outcome") == "failed" for r in results) else 0)
+    return True
+
+
 def run_cases(
     paths: list[str],
     *,
@@ -128,7 +147,7 @@ def run_cases(
     require_vitest()
     with tempfile.TemporaryDirectory(prefix="llm-fuzz-results-") as tmp:
         env = os.environ.copy()
-        env["LLM_FUZZ_RESULT_DIR"] = tmp
+        env["LLM_FUZZ_RESULT_DIR"] = tmp  # keep our own run out of the tree
         env["LLM_FUZZ_CORPUS_DIR"] = corpus_dir
         if require_cases:
             env["LLM_FUZZ_REQUIRE_CASES"] = "1"

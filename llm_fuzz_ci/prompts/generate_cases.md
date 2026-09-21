@@ -5,6 +5,7 @@ Repository root: {{REPO_ROOT}}
 
 Target:
 {{TARGET_JSON}}
+{{REPLAY_COMMAND}}
 
 The target is a marked {{FRAMEWORK}} test. Read it, then read the application
 code it calls. Work out where that code could mishandle what it is given:

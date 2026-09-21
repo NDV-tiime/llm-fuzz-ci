@@ -52,7 +52,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
     group.addoption(
         "--llm-fuzz-report",
-        default=None,
+        default=".llm-fuzz/reports/test-report.json",
         help="Write per-input results to this JSON file.",
     )
     group.addoption(
@@ -177,10 +177,14 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[Any]):
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     output = session.config.getoption("--llm-fuzz-report")
-    if not output:
+    results = session.config.llm_fuzz_results  # type: ignore[attr-defined]
+    targets = session.config.llm_fuzz_targets  # type: ignore[attr-defined]
+    # The path is defaulted, so an ordinary `pytest` run in a repo with no
+    # marked tests must not start leaving report files behind. A marked test
+    # that skipped still counts: that run has something to report.
+    if not output or (not results and not targets):
         return
 
-    results = session.config.llm_fuzz_results  # type: ignore[attr-defined]
     failed = [result for result in results if result["outcome"] == "failed"]
     payload = {
         "schema_version": REPORT_SCHEMA_VERSION,

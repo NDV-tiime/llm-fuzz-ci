@@ -17,7 +17,10 @@ import { fileURLToPath } from "node:url";
 import { test } from "vitest";
 
 const COLLECT_DIR = process.env.LLM_FUZZ_COLLECT_DIR;
-const RESULT_DIR = process.env.LLM_FUZZ_RESULT_DIR;
+// Defaulted, so a plain `vitest run` records its results too. The CLI only
+// overrides it to keep a run it drives out of the working tree.
+const RESULT_DIR =
+  process.env.LLM_FUZZ_RESULT_DIR ?? ".llm-fuzz/reports/vitest-results";
 const CORPUS_DIR = process.env.LLM_FUZZ_CORPUS_DIR ?? ".llm-fuzz/cases";
 const REQUIRE_CASES = process.env.LLM_FUZZ_REQUIRE_CASES === "1";
 
@@ -48,9 +51,9 @@ function callerFile() {
   return "unknown";
 }
 
-function emit(directory, payload) {
+function emit(directory, payload, name = randomUUID()) {
   mkdirSync(directory, { recursive: true });
-  writeFileSync(join(directory, `${randomUUID()}.json`), JSON.stringify(payload));
+  writeFileSync(join(directory, `${name}.json`), JSON.stringify(payload));
 }
 
 function loadCases(targetId) {
@@ -62,8 +65,11 @@ function loadCases(targetId) {
     .map((line) => JSON.parse(line));
 }
 
-function record(entry) {
-  if (RESULT_DIR) emit(RESULT_DIR, entry);
+function record(entry, name) {
+  // Named after the case rather than at random: running the suite twice has to
+  // overwrite the first run's verdict, not leave both for the report to pick
+  // between.
+  emit(RESULT_DIR, entry, name);
 }
 
 /**
@@ -99,7 +105,6 @@ export function fuzzTest(name, options, body) {
   const cases = loadCases(targetId);
 
   if (cases === null) {
-    if (!RESULT_DIR) return test.skip(name, () => {});
     if (!REQUIRE_CASES) return test.skip(`${name} [no-inputs]`, () => {});
     return test(`${name} [no-inputs]`, () => {
       record({
@@ -111,7 +116,7 @@ export function fuzzTest(name, options, body) {
         input: null,
         rationale: "The generator produced no input for this test.",
         failure: `No saved inputs for '${targetId}'`,
-      });
+      }, `${sanitizeTargetId(targetId)}-no-inputs`);
       throw new Error(`No saved inputs for '${targetId}'`);
     });
   }
@@ -125,6 +130,7 @@ export function fuzzTest(name, options, body) {
     // No case_id here on purpose. It is a hash of the input that the Python
     // side already knows how to take, and two implementations of one hash
     // drift apart silently.
+    const slot = `${sanitizeTargetId(targetId)}-${index}`;
     test(`${name} [${index + 1}/${cases.length}]`, async () => {
       const started = performance.now();
       const entry = {
@@ -141,14 +147,14 @@ export function fuzzTest(name, options, body) {
           outcome: "failed",
           duration: (performance.now() - started) / 1000,
           failure: String(error?.stack ?? error),
-        });
+        }, slot);
         throw error;
       }
       record({
         ...entry,
         outcome: "passed",
         duration: (performance.now() - started) / 1000,
-      });
+      }, slot);
     });
   });
 }

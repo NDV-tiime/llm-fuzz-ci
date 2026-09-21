@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -55,6 +56,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override every marker budget. Enforced on Claude Code only.",
     )
+    generate.add_argument(
+        "--replay-command",
+        default=None,
+        help="The command that will replay these inputs. Shown to the agent.",
+    )
     generate.add_argument("--timeout-seconds", type=int, default=600)
     generate.add_argument(
         "--dry-run",
@@ -72,6 +78,23 @@ def build_parser() -> argparse.ArgumentParser:
     test.add_argument("--require-cases", action="store_true")
     test.add_argument("pytest_args", nargs=argparse.REMAINDER)
     test.set_defaults(func=cmd_test_fuzz_cases)
+
+    report = commands.add_parser(
+        "report", help="Render the run, post an issue, and set the exit code"
+    )
+    report.add_argument("--corpus-dir", default=CORPUS)
+    report.add_argument("--report", default=TEST_REPORT)
+    report.add_argument("--usage-report", default=USAGE_REPORT)
+    report.add_argument("--output-dir", default=".llm-fuzz/reports")
+    report.add_argument("--create-issue", action="store_true")
+    report.add_argument("--issue-assignees", default="")
+    report.add_argument("--issue-labels", default="")
+    report.add_argument(
+        "--hard-fail",
+        action="store_true",
+        help="Exit non-zero when a generated input failed its test.",
+    )
+    report.set_defaults(func=cmd_report)
 
     summary = commands.add_parser("summary", help="Render the run as Markdown")
     summary.add_argument(
@@ -190,7 +213,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
     if args.dry_run:
         for target in targets:
             print(f"--- {target.id} " + "-" * max(0, 68 - len(target.id)))
-            print(build_prompt(target, Path.cwd()))
+            print(build_prompt(target, Path.cwd(), args.replay_command))
         print(f"\n{len(targets)} agent run(s) would be made. Nothing was sent.")
         return 0
     print(
@@ -209,6 +232,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
         timeout_seconds=args.timeout_seconds,
         capture_usage=args.show_usage or bool(args.usage_report),
         trace_dir=Path(TRACES),
+        replay_command=args.replay_command,
     )
 
     dropped = clear_corpus(args.corpus_dir, targets)
@@ -278,6 +302,11 @@ def cmd_test_fuzz_cases(args: argparse.Namespace) -> int:
 
 
 def cmd_summary(args: argparse.Namespace) -> int:
+    from . import vitest_runner
+
+    # A workflow may run vitest itself rather than through this CLI.
+    vitest_runner.adopt_plain_run(args.report)
+
     overview = args.format == "overview"
     content = render(
         cases=load_cases(args.corpus_dir),
@@ -361,3 +390,90 @@ def write_barren_report(path: str, targets: list[Any], result: Any) -> None:
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(barren, indent=2), encoding="utf-8")
+
+
+def cmd_report(args: argparse.Namespace) -> int:
+    """Everything a CI run wants after the tests: show, keep, alert, fail.
+
+    A command rather than a second action, so a workflow reads as one action of
+    ours and then ordinary steps. Uploading the artifact is the only piece left
+    outside, because only GitHub's own action can do it.
+    """
+    from . import vitest_runner
+
+    vitest_runner.adopt_plain_run(args.report)
+
+    out = Path(args.output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    rendered = {}
+    for name, overview in (("overview.md", True), ("llm-fuzz-ci-report.md", False)):
+        rendered[name] = render(
+            cases=load_cases(args.corpus_dir),
+            test_report=read_json(args.report),
+            usage_report=read_json(args.usage_report),
+            barren=read_json(BARREN_REPORT) or None,
+            fold=overview,
+            max_bytes=SUMMARY_BYTES if overview else None,
+        )
+        (out / name).write_text(rendered[name] + "\n", encoding="utf-8")
+
+    overview = rendered["overview.md"]
+    print(overview)
+    step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if step_summary:
+        with open(step_summary, "a", encoding="utf-8") as handle:
+            handle.write(overview + "\n")
+
+    failed = int((read_json(args.report) or {}).get("summary", {}).get("failed_cases", 0))
+    if failed and args.create_issue:
+        open_issue(overview, failed, args.issue_assignees, args.issue_labels)
+    if failed and args.hard_fail:
+        print(f"{failed} generated input(s) failed a marked test.", file=sys.stderr)
+        return 1
+    return 0
+
+
+def names(value: str) -> list[str]:
+    return [item.strip() for item in (value or "").split(",") if item.strip()]
+
+
+def open_issue(body: str, failed: int, assignees: str, labels: str) -> None:
+    """Open a GitHub issue for the run, if the environment can."""
+    import json as _json
+    import urllib.error
+    import urllib.request
+
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if not repo or not token:
+        print(
+            "Not opening an issue: GITHUB_REPOSITORY and GITHUB_TOKEN must both "
+            "be set, and the job needs `permissions: issues: write`.",
+            file=sys.stderr,
+        )
+        return
+
+    server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    sha = os.environ.get("GITHUB_SHA", "")[:7]
+    payload = {
+        "title": f"LLM Fuzz CI: {failed} generated input(s) failing",
+        "body": f"{body}\n\n[Run]({server}/{repo}/actions/runs/{run_id}) - commit `{sha}`",
+        "assignees": names(assignees),
+        "labels": names(labels),
+    }
+    request = urllib.request.Request(
+        f"{os.environ.get('GITHUB_API_URL', 'https://api.github.com')}/repos/{repo}/issues",
+        data=_json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            number = _json.loads(response.read()).get("number")
+        print(f"Opened issue #{number}.")
+    except urllib.error.HTTPError as exc:
+        print(f"Could not open the issue: {exc.code} {exc.read()[:200]!r}", file=sys.stderr)

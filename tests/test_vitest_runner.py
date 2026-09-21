@@ -143,3 +143,27 @@ def test_vitest_is_not_launched_at_all_when_no_file_declares_a_target(tmp_path, 
     monkeypatch.setattr(vitest_runner.subprocess, "run", explode)
 
     assert vitest_runner.collect(["tests"], str(tmp_path / "targets.json")) == 0
+
+
+def test_a_vitest_run_the_user_launched_is_adopted(tmp_path):
+    """The workflow may call `vitest run` in the open, not through this CLI."""
+    results = tmp_path / "vitest-results"
+    results.mkdir()
+    (results / "a-0.json").write_text(
+        json.dumps({"target_id": "t.py::a", "input": {"x": 1}, "outcome": "failed"})
+    )
+    report = tmp_path / "test-report.json"
+
+    assert vitest_runner.adopt_plain_run(str(report), str(results)) is True
+
+    written = json.loads(report.read_text())
+    assert written["summary"]["failed_cases"] == 1
+    assert written["exitstatus"] == 1
+
+
+def test_a_report_this_cli_already_wrote_is_left_alone(tmp_path):
+    report = tmp_path / "test-report.json"
+    report.write_text('{"mine": true}')
+
+    assert vitest_runner.adopt_plain_run(str(report), str(tmp_path / "none")) is False
+    assert report.read_text() == '{"mine": true}'
