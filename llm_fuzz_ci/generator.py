@@ -41,7 +41,6 @@ def generate_cases(
     timeout_seconds: int = 600,
     capture_usage: bool = False,
     trace_dir: Path | None = None,
-    replay_command: str | None = None,
 ) -> Generated:
     if provider and agent != "codex":
         raise ValueError(
@@ -77,7 +76,6 @@ def generate_cases(
                     timeout_seconds=timeout_seconds,
                     capture_usage=capture_usage,
                     trace_dir=trace_dir,
-                    replay_command=replay_command,
                 )
             else:
                 result = generate_with_claude(
@@ -88,7 +86,6 @@ def generate_cases(
                     timeout_seconds=timeout_seconds,
                     capture_usage=capture_usage,
                     trace_dir=trace_dir,
-                    replay_command=replay_command,
                 )
         except (RuntimeError, ValueError, subprocess.TimeoutExpired) as exc:
             # Targets are independent. Losing one must not discard the inputs
@@ -105,33 +102,16 @@ def generate_cases(
 LANGUAGE_NAMES = {"python": "Python", "javascript": "JavaScript"}
 
 
-def build_prompt(
-    target: FuzzTarget,
-    repo_root: Path,
-    replay_command: str | None = None,
-) -> str:
+def build_prompt(target: FuzzTarget, repo_root: Path) -> str:
     template = files("llm_fuzz_ci.prompts").joinpath("generate_cases.md").read_text()
     return (
         template.replace("{{REPO_ROOT}}", str(repo_root))
         .replace("{{TARGET_JSON}}", json.dumps(target.to_dict(), indent=2))
-        .replace("{{REPLAY_COMMAND}}", replay_line(replay_command))
         .replace("{{LANGUAGE}}", language_name(target))
         .replace("{{FRAMEWORK}}", framework_name(target))
         .replace("{{EXAMPLE_INPUT_JSON}}", json.dumps(json.dumps({"x": 1, "y": 0})))
         .replace("{{INPUT_KEYS}}", input_keys_rule(target))
     )
-
-
-def replay_line(command: str | None) -> str:
-    """Tell the agent how its inputs will be run.
-
-    It is writing for a harness it never sees execute, and the command names the
-    runner, the paths and the flags that harness will use. Left out when the
-    caller does not know it, rather than guessed at.
-    """
-    if not command or not command.strip():
-        return ""
-    return f"\nReplayed afterwards by, from that root:\n    {command.strip()}"
 
 
 def language_name(target: FuzzTarget) -> str:
@@ -203,10 +183,9 @@ def generate_with_codex(
     timeout_seconds: int,
     capture_usage: bool,
     trace_dir: Path | None,
-    replay_command: str | None = None,
 ) -> Generated:
     help_text = require_codex()
-    prompt = build_prompt(target, repo_root, replay_command)
+    prompt = build_prompt(target, repo_root)
     with tempfile.TemporaryDirectory(prefix="llm-fuzz-codex-") as tmpdir:
         tmp = Path(tmpdir)
         schema_path = tmp / "agent-output.schema.json"
@@ -266,9 +245,8 @@ def generate_with_claude(
     timeout_seconds: int,
     capture_usage: bool,
     trace_dir: Path | None,
-    replay_command: str | None = None,
 ) -> Generated:
-    prompt = build_prompt(target, repo_root, replay_command)
+    prompt = build_prompt(target, repo_root)
     cmd = claude_command(
         prompt=prompt,
         model=model,

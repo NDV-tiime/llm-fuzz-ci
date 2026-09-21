@@ -52,18 +52,15 @@ jobs:
           python-version: "3.12"
       - run: pip install -e .          # your setup, however you do it
 
-      # 1. the agent writes inputs into .llm-fuzz/cases
       - uses: NDV-tiime/llm-fuzz-ci@v1
         with:
           test-paths: tests
-          test-command: pytest tests
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 
-      # 2. your own test command runs them
       - run: pytest tests
         continue-on-error: true
 
-      # 3. summary, issue, exit code
+      # summary, issue, exit code
       - run: llm-fuzz-ci report --create-issue --hard-fail
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -75,7 +72,7 @@ jobs:
           path: .llm-fuzz/reports
 ```
 
-For a Node project, three lines change:
+For a Node project:
 
 ```yaml
       - uses: actions/setup-node@v6
@@ -86,7 +83,6 @@ For a Node project, three lines change:
       - uses: NDV-tiime/llm-fuzz-ci@v1
         with:
           test-paths: tests
-          test-command: npx vitest run tests     # <- and here
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 
       - run: npx vitest run tests                # <- and here
@@ -121,7 +117,6 @@ def test_transfer(llm_fuzz_case):
 | Input | Default | Description |
 | --- | --- | --- |
 | `test-paths` | `tests` | paths holding marked tests |
-| `test-command` | | the step-2 command, shown to the agent as context |
 | `runner` | `auto` | `pytest`, `vitest`, or `auto` from the paths |
 | `working-directory` | `.` | subdirectory to run in |
 | `agent` | `codex` | `codex` or `claude` |

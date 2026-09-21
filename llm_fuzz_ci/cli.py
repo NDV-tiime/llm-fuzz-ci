@@ -56,11 +56,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override every marker budget. Enforced on Claude Code only.",
     )
-    generate.add_argument(
-        "--replay-command",
-        default=None,
-        help="The command that will replay these inputs. Shown to the agent.",
-    )
     generate.add_argument("--timeout-seconds", type=int, default=600)
     generate.add_argument(
         "--dry-run",
@@ -213,7 +208,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
     if args.dry_run:
         for target in targets:
             print(f"--- {target.id} " + "-" * max(0, 68 - len(target.id)))
-            print(build_prompt(target, Path.cwd(), args.replay_command))
+            print(build_prompt(target, Path.cwd()))
         print(f"\n{len(targets)} agent run(s) would be made. Nothing was sent.")
         return 0
     print(
@@ -232,7 +227,6 @@ def cmd_generate(args: argparse.Namespace) -> int:
         timeout_seconds=args.timeout_seconds,
         capture_usage=args.show_usage or bool(args.usage_report),
         trace_dir=Path(TRACES),
-        replay_command=args.replay_command,
     )
 
     dropped = clear_corpus(args.corpus_dir, targets)

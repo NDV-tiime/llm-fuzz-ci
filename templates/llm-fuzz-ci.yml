@@ -38,9 +38,6 @@ jobs:
           # EDIT ME — where your marked tests live.
           test-paths: tests
 
-          # EDIT ME — the command in step 2, shown to the agent as context.
-          test-command: pytest tests
-
           # codex (default) or claude. Leave model unset for the agent default.
           agent: codex
           # model: gpt-5.6-terra

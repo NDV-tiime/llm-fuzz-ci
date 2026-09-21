@@ -14,7 +14,6 @@ def generate_args(tmp_path, **overrides):
         max_turns=None,
         max_budget_usd=None,
         timeout_seconds=600,
-        replay_command=None,
         show_usage=False,
         usage_report=None,
         dry_run=False,

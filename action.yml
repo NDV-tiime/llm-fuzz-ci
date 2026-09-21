@@ -43,12 +43,6 @@ inputs:
     description: Print the agent's token usage.
     required: false
     default: "false"
-  test-command:
-    description: >-
-      The command that will replay these inputs, shown to the agent as context.
-      Leave empty to tell it nothing rather than something untrue.
-    required: false
-    default: ""
   openai-api-key:
     description: OpenAI API key, for agent codex.
     required: false
@@ -119,7 +113,6 @@ runs:
         if [ -n "${{ inputs.provider }}" ]; then extra+=(--provider "${{ inputs.provider }}"); fi
         if [ -n "${{ inputs.max-budget-usd }}" ]; then extra+=(--max-budget-usd "${{ inputs.max-budget-usd }}"); fi
         if [ "${{ inputs.show-usage }}" = "true" ]; then extra+=(--show-usage); fi
-        if [ -n "${{ inputs.test-command }}" ]; then extra+=(--replay-command "${{ inputs.test-command }}"); fi
 
         llm-fuzz-ci generate \
           --agent "${{ inputs.agent }}" \
