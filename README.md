@@ -57,7 +57,7 @@ jobs:
           test-paths: tests
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 
-      - run: pytest tests
+      - run: pytest tests -m llm_fuzz
         continue-on-error: true
 
       # summary, issue, exit code
@@ -85,7 +85,7 @@ For a Node project:
           test-paths: tests
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 
-      - run: npx vitest run tests                # <- and here
+      - run: npx vitest run .fuzz.
         continue-on-error: true
 ```
 
@@ -93,6 +93,8 @@ Run it from the Actions tab.
 
 Set the job up the way you would for any other test run: dependencies in steps
 before it, databases and queues in `services`, configuration in the job's `env`.
+
+The test step needs no flags for the corpus: the plugin loads through its entry point and reads `.llm-fuzz/cases`. What it does need is a way to run only the marked tests, or an unrelated failure reddens a fuzz run. `-m llm_fuzz` does that for pytest. vitest has no markers, so narrow by filename — `npx vitest run .fuzz.` matches any path containing `.fuzz.`, which is why the examples are named `redirect.fuzz.test.mjs`. A dedicated directory works as well: `npx vitest run tests/fuzz`.
 
 An annotated copy is in
 [`templates/llm-fuzz-ci.yml`](templates/llm-fuzz-ci.yml).

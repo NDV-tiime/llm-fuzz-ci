@@ -47,9 +47,11 @@ jobs:
           #   claude -> anthropic-api-key
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 
-      # 2. Your own test command. No flags needed: the plugin loads itself and
-      #    reads .llm-fuzz/cases.  EDIT ME for Node:  npx vitest run tests
-      - run: pytest tests
+      # 2. Your own test command. The plugin loads itself and reads
+      #    .llm-fuzz/cases; `-m llm_fuzz` keeps this step to the marked tests
+      #    so an unrelated failure cannot redden a fuzz run.
+      #    EDIT ME for Node:  npx vitest run .fuzz.
+      - run: pytest tests -m llm_fuzz
         continue-on-error: true
 
       # 3. Summary on the run page, an issue, and the exit code.
