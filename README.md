@@ -68,8 +68,11 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: llm-fuzz-ci-report
-          path: .llm-fuzz/reports
+          name: llm-fuzz-ci
+          include-hidden-files: true
+          path: |
+            .llm-fuzz
+            !.llm-fuzz/reports/vitest-results
 ```
 
 For a Node project:
@@ -145,7 +148,19 @@ want to look at.
 
 ## Alerts
 
-Every run writes a summary to the Actions run page: one row per marked test with its outcome, each failing input in full with the assertion that fired. The `llm-fuzz-ci-report` artifact holds the same run unfolded, plus `test-report.json` and `llm-usage.json`, and `agent-trace/`, a transcript per test of what the agent reasoned, ran, and saw.
+Every run writes a summary to the Actions run page: one row per marked test with
+its outcome, each failing input in full with the assertion that fired.
+
+The `llm-fuzz-ci` artifact holds the whole run:
+
+| | |
+| --- | --- |
+| `cases/` | every input the agent wrote, as JSON Lines |
+| `targets.json` | the marked tests it was pointed at |
+| `reports/llm-fuzz-ci-report.md` | the same summary, unfolded |
+| `reports/test-report.json` | one record per input, for processing |
+| `reports/llm-usage.json` | tokens spent |
+| `reports/agent-trace/` | per test, what the agent reasoned, ran, and saw |
 
 All of the following are off unless you turn them on.
 
